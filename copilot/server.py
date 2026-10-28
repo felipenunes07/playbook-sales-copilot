@@ -408,7 +408,7 @@ async def websocket(ws: WebSocket) -> None:
 async def handle_message(conn: Connection, msg: dict[str, Any]) -> None:
     kind = msg.get("type")
     if conn.session is None and kind not in ("ping",):
-        await conn.send({"type": "error", "message": "server has no API key (set TYPESAFE_API_KEY and restart)"})
+        await conn.send({"type": "error", "message": "O servidor está sem chave de API: defina OPENROUTER_API_KEY (ou TYPESAFE_API_KEY) e reinicie ou republique."})
         return
     session = conn.session
     assert session is not None

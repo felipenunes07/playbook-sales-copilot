@@ -314,7 +314,7 @@
       m.calls.filter(c => c.video && (c.video.youtube_id || c.video.file || c.video.url)).forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.title} (${Math.round(c.duration_s / 60)} min)`; vsel.appendChild(o); });
       if (!vsel.options.length) { const o = document.createElement('option'); o.textContent = 'nenhuma call com vídeo em data/calls'; o.disabled = true; vsel.appendChild(o); }
       renderStages(null); renderWeights(m.weights); renderSignalsSkeleton(m.weights);
-      if (!m.has_api_key) toast('O servidor não tem chave de API. Defina TYPESAFE_API_KEY e reinicie.');
+      if (!m.has_api_key) toast('O servidor está sem chave de API: defina OPENROUTER_API_KEY (ou TYPESAFE_API_KEY) e reinicie ou republique.');
     } else if (m.type === 'phrasing') {
       // tailored line from the LLM (already verified by Jev server-side); keep it only while the move is unchanged
       state.tailored = { move_id: m.move_id, index: m.index, text: m.text, rejected: m.rejected, candidate: m.candidate, llm: m.llm, verification: m.verification, reason: m.reason };
