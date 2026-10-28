@@ -41,6 +41,66 @@
   let ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
   let pc = null, local = null, left = false, timer = null, mode = 'server', peer = null, media = null;
 
+  // Free transcription of the guest's own voice with Chrome's speech recognition. Only the text goes to the rep's
+  // copilot, over a data channel of the call. Phones are left out: there the recognizer competes with the call for the mic.
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  let rec = null, sttOn = false, sttOk = false, dc = null, dataFor = null, loudAt = 0, meter = null, meterCtx = null;
+  function sendText(m) {
+    if (!dc) return;
+    try {
+      if (dc.readyState === 'open') dc.send(JSON.stringify(m));  // RTCDataChannel
+      else if (dc.open === true) dc.send(m);                     // PeerJS DataConnection
+    } catch (_) {}
+  }
+  function attachChannel(ch) {
+    dc = ch;
+    const hello = () => { if (dc === ch) sendText({ type: 'stt-status', ok: sttOk }); };
+    if (ch.readyState === 'open' || ch.open === true) hello();
+    if (ch.on) ch.on('open', hello); else ch.onopen = hello;
+  }
+  // The recognizer opens the mic without echo cancellation, so it may also hear the rep through the speakers:
+  // only send text while the echo-cancelled call mic shows the guest's own voice.
+  function startMeter() {
+    meterCtx = new AudioContext();
+    const an = meterCtx.createAnalyser(); an.fftSize = 1024;
+    meterCtx.createMediaStreamSource(local).connect(an);  // not connected to the speakers: silent
+    const buf = new Float32Array(an.fftSize);
+    meter = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      if (Math.sqrt(sum / buf.length) > 0.012) loudAt = Date.now();
+    }, 100);
+  }
+  const talking = () => Date.now() - loudAt < 3000;
+  function startSTT() {
+    if (!SpeechRec || MOBILE || rec) return;
+    const r = rec = new SpeechRec(); r.continuous = true; r.interimResults = true; r.lang = 'pt-BR';
+    let fails = 0;
+    r.onstart = () => { sttOk = true; sendText({ type: 'stt-status', ok: true }); };
+    r.onresult = (ev) => {
+      let interim = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const res = ev.results[i];
+        if (res.isFinal) { fails = 0; const text = res[0].transcript.trim(); if (text && talking()) sendText({ type: 'stt', text, final: true }); }
+        else interim += res[0].transcript;
+      }
+      if (interim && talking()) sendText({ type: 'stt', text: interim, final: false });
+    };
+    r.onerror = (e) => {
+      if (e.error === 'no-speech' || e.error === 'aborted') return;
+      if (++fails >= 3 || /not-allowed/.test(e.error)) { stopSTT(); sttOk = false; sendText({ type: 'stt-status', ok: false }); }
+    };
+    r.onend = () => { if (rec === r && sttOn) { try { r.start(); } catch (_) {} } };
+    sttOn = true;
+    try { r.start(); } catch (_) {}
+  }
+  function stopSTT() {
+    sttOn = false;
+    const r = rec; rec = null;
+    if (r) { r.onend = null; try { r.abort(); } catch (_) {} }
+  }
+
   const status = (title, text) => { $('status').classList.remove('hidden'); $('status').innerHTML = `<b>${title}</b>${text || ''}`; };
   const hideStatus = () => $('status').classList.add('hidden');
   // signaling through the server over plain HTTP (post + poll)
@@ -49,6 +109,7 @@
   function newPeer() {
     if (pc) pc.close();
     pc = new RTCPeerConnection({ iceServers: ICE });
+    pc.ondatachannel = (e) => attachChannel(e.channel);
     local.getTracks().forEach(t => pc.addTrack(t, local));
     pc.onicecandidate = (e) => send({ type: 'ice', candidate: e.candidate });
     pc.ontrack = (e) => { if ($('remote').srcObject !== e.streams[0]) $('remote').srcObject = e.streams[0]; hideStatus(); };
@@ -99,7 +160,10 @@
     if (media) media.close();
     const mc = media = peer.call(hostId, local);
     if (!mc) { timer = setTimeout(callHost, 2000); return; }
-    mc.on('stream', (stream) => { if ($('remote').srcObject !== stream) $('remote').srcObject = stream; hideStatus(); });
+    mc.on('stream', (stream) => {
+      if ($('remote').srcObject !== stream) $('remote').srcObject = stream; hideStatus();
+      if (dataFor !== mc) { dataFor = mc; attachChannel(peer.connect(hostId, { reliable: true })); }  // text channel to the rep
+    });
     mc.on('close', () => {
       if (left || media !== mc) return;
       $('remote').srcObject = null;
@@ -148,10 +212,15 @@
       return;
     }
     $('local').srcObject = local; $('local').classList.remove('hidden'); $('bar').classList.remove('hidden');
+    try { startMeter(); } catch (_) {}
+    startSTT();
     status('Aguardando…', 'Você entrou. A chamada começa assim que a outra pessoa estiver na sala.');
     connect();
   };
-  const toggle = (kind, btn) => () => { const t = local.getTracks().find(x => x.kind === kind); t.enabled = !t.enabled; $(btn).classList.toggle('off', !t.enabled); };
+  const toggle = (kind, btn) => () => {
+    const t = local.getTracks().find(x => x.kind === kind); t.enabled = !t.enabled; $(btn).classList.toggle('off', !t.enabled);
+    if (kind === 'audio') { if (t.enabled) startSTT(); else stopSTT(); }  // the recognizer has its own mic: stop it too
+  };
   $('mic').onclick = toggle('audio', 'mic');
   $('cam').onclick = toggle('video', 'cam');
   window.addEventListener('beforeunload', () => { if (local && !left && mode === 'server') send({ type: 'bye' }, true); if (peer) peer.destroy(); });
@@ -159,6 +228,7 @@
     left = true; clearTimeout(timer);
     if (mode === 'server') send({ type: 'bye' }, true);
     if (media) media.close(); if (peer) peer.destroy();
+    stopSTT(); clearInterval(meter); if (meterCtx) meterCtx.close();
     if (pc) pc.close(); local.getTracks().forEach(t => t.stop());
     $('bar').classList.add('hidden'); $('local').classList.add('hidden'); $('remote').srcObject = null;
     status('Você saiu da chamada', 'Pode fechar esta página.');

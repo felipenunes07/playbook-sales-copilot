@@ -810,11 +810,13 @@
   });
 
   // ---------- video call: WebRTC with the prospect, speaker known by channel (mic = rep, remote = prospect) ----------
-  // Each audio stream is cut into speech segments (energy gate + silence timeout), encoded as 16 kHz WAV and sent to
-  // /api/transcribe; the text comes back and goes to the copilot as a normal utterance for that speaker.
+  // Transcription is free by default: each side's browser transcribes its own voice with Chrome's speech recognition
+  // (the prospect's page sends its text over a data channel). When that is not available, each audio stream is cut
+  // into speech segments (energy gate + silence timeout), encoded as 16 kHz WAV and sent to the paid /api/transcribe.
   // Signaling goes through the server over plain HTTP (post + poll), so it works when the rep and the prospect reach
   // different serverless instances.
-  const call = { pc: null, poll: null, room: null, ice: null, signaling: 'server', peer: null, media: null, local: null, segs: [], start: null, stt: { n: 0, cost: 0, ms: 0 } };
+  const call = { pc: null, poll: null, room: null, ice: null, signaling: 'server', peer: null, media: null, local: null, segs: [], start: null, stt: { n: 0, cost: 0, ms: 0 },
+    sttMode: { rep: 'paid', prospect: 'paid' }, loudAt: {}, live: {}, recent: [], repRec: null, repOn: false, dc: null };
   const sigUrl = (what) => `/sala/${encodeURIComponent(call.room)}/${what}?role=host`;
   const sendSig = (m, keepalive = false) => { if (call.room) fetch(sigUrl('send'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m), keepalive }).catch(() => {}); };
   const callT = () => (call.start ? (Date.now() - call.start) / 1000 : 0);
@@ -845,6 +847,7 @@
       let sum = 0; for (let i = 0; i < x.length; i++) sum += x[i] * x[i];
       const rms = Math.sqrt(sum / x.length), ms = (x.length / RATE) * 1000, loud = rms > GATE;
       vu.classList.toggle('on', loud);
+      if (loud) call.loudAt[speaker] = Date.now();
       if (!speaking) {
         pre.push(x); if (pre.length > 4) pre.shift();  // keep ~0.5 s before the voice starts
         if (loud) { speaking = true; chunks = pre.slice(); pre = []; silence = 0; speech = ms; total = ms; t0 = callT(); }
@@ -854,7 +857,7 @@
       if (loud) { speech += ms; silence = 0; } else silence += ms;
       if (silence >= END_SILENCE_MS || total >= MAX_MS) {
         speaking = false;
-        if (speech >= MIN_SPEECH_MS) transcribe(wavFromFloat(chunks, RATE), speaker, t0);
+        if (speech >= MIN_SPEECH_MS && call.sttMode[speaker] !== 'chrome') transcribe(wavFromFloat(chunks, RATE), speaker, t0);
         chunks = [];
       }
     };
@@ -873,9 +876,91 @@
     try {
       const r = await (await fetch('/api/transcribe', { method: 'POST', body: wav })).json();
       if (r.error) { toast('Transcrição: ' + r.error); return; }
-      if (r.latency_ms) { call.stt.n++; call.stt.ms = r.latency_ms; call.stt.cost = r.total_cost_usd; $('stt-meta').textContent = `transcrição ${r.latency_ms} ms · $${(r.total_cost_usd || 0).toFixed(4)}`; }
+      if (r.latency_ms) { call.stt.n++; call.stt.ms = r.latency_ms; call.stt.cost = r.total_cost_usd; sttMeta(); }
       if (r.text) send({ type: 'utterance', speaker, text: r.text, t });
     } catch (e) { toast('Transcrição falhou: ' + e); }
+  }
+
+  // ---------- free transcription (Chrome's Web Speech API) ----------
+  // The rep's page transcribes the rep's mic; the prospect's page transcribes the prospect's mic and sends the text here.
+  // Each side only transcribes its own voice, so who spoke is exact. A side falls back to the paid path when it can't.
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  function sttMeta() {
+    const label = (m) => (m === 'chrome' ? 'Chrome grátis' : 'paga');
+    let txt = `transcrição · você: ${label(call.sttMode.rep)} · cliente: ${label(call.sttMode.prospect)}`;
+    if (call.stt.n) txt += ` · ${call.stt.n} trechos pagos $${(call.stt.cost || 0).toFixed(4)}`;
+    $('stt-meta').textContent = txt;
+  }
+  // The text being spoken right now, shown as a pending row at the bottom of the transcript
+  function liveRow(speaker, text) {
+    let row = call.live[speaker];
+    if (!text || !state.aiOn) { if (row) row.remove(); call.live[speaker] = null; return; }
+    if (!row || !row.isConnected) {
+      row = call.live[speaker] = document.createElement('div'); row.className = `utt ${speaker} pending`;
+      row.innerHTML = `<span class="t">…</span><span class="who">${WHO[speaker]}</span><span class="txt"></span><span class="p"></span>`;
+    }
+    if (row !== $('transcript').lastElementChild) $('transcript').appendChild(row);
+    row.querySelector('.txt').textContent = text + '…';
+    $('transcript').scrollTop = $('transcript').scrollHeight;
+  }
+  // Without headphones one side's mic can also hear the other through the speakers: drop a line that repeats what the
+  // other side said a moment ago.
+  const wordSet = (s) => new Set(s.toLowerCase().normalize('NFD').replace(/[^\p{L}\p{N} ]/gu, '').split(/\s+/).filter(Boolean));
+  function isEcho(speaker, text) {
+    const w = wordSet(text), now = Date.now();
+    call.recent = call.recent.filter(r => now - r.at < 12000);
+    const echo = w.size >= 4 && call.recent.some(r => {
+      if (r.speaker === speaker || r.w.size < 4) return false;
+      let common = 0; for (const x of w) if (r.w.has(x)) common++;
+      return common / Math.min(w.size, r.w.size) >= 0.6;
+    });
+    if (!echo) call.recent.push({ speaker, w, at: now });
+    return echo;
+  }
+  function finalText(speaker, text) {
+    liveRow(speaker, '');
+    text = (text || '').trim();
+    if (!text || isEcho(speaker, text)) return;
+    send({ type: 'utterance', speaker, text, t: callT() });
+  }
+  function startRepSTT() {
+    if (!SpeechRec || !call.local) { call.sttMode.rep = 'paid'; sttMeta(); return; }
+    if (call.repRec) return;
+    const r = call.repRec = new SpeechRec(); r.continuous = true; r.interimResults = true; r.lang = 'pt-BR';
+    let fails = 0;
+    // Chrome's recognizer opens the mic on its own, without echo cancellation: only trust it while the rep's
+    // echo-cancelled stream shows the rep's voice.
+    const repTalking = () => Date.now() - (call.loudAt.rep || 0) < 3000;
+    r.onstart = () => { call.sttMode.rep = 'chrome'; sttMeta(); };
+    r.onresult = (ev) => {
+      let interim = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const res = ev.results[i];
+        if (res.isFinal) { fails = 0; if (repTalking()) finalText('rep', res[0].transcript); }
+        else interim += res[0].transcript;
+      }
+      liveRow('rep', interim && repTalking() ? interim : '');
+    };
+    r.onerror = (e) => {
+      if (e.error === 'no-speech' || e.error === 'aborted') return;
+      if (++fails >= 3 || /not-allowed/.test(e.error)) { stopRepSTT(); call.sttMode.rep = 'paid'; sttMeta(); }
+    };
+    r.onend = () => { if (call.repRec === r && call.repOn) { try { r.start(); } catch (_) {} } };
+    call.repOn = true;
+    try { r.start(); } catch (_) { call.sttMode.rep = 'paid'; sttMeta(); }
+  }
+  function stopRepSTT() {
+    call.repOn = false;
+    const r = call.repRec; call.repRec = null;
+    if (r) { r.onend = null; try { r.abort(); } catch (_) {} }
+    liveRow('rep', '');
+  }
+  // Messages from the prospect's page: whether its free transcription runs, and the text it heard
+  function onGuestMsg(m) {
+    if (typeof m === 'string') { try { m = JSON.parse(m); } catch (_) { return; } }
+    if (!m) return;
+    if (m.type === 'stt-status') { call.sttMode.prospect = m.ok ? 'chrome' : 'paid'; sttMeta(); }
+    else if (m.type === 'stt') { if (m.final) finalText('prospect', m.text); else liveRow('prospect', m.text); }
   }
 
   // The prospect's stream arrived (either signaling path): show it and transcribe it as `prospect`.
@@ -890,6 +975,8 @@
     $('call-status').textContent = 'em chamada · fale normalmente, o copiloto separa quem fala sozinho';
   }
   function onPeerGone() {
+    call.sttMode.prospect = 'paid'; liveRow('prospect', ''); sttMeta();
+    if (call.dc) { try { call.dc.close(); } catch (_) {} } call.dc = null;
     call.segs.filter(s => s.speaker === 'prospect').forEach(s => s.stop()); call.segs = call.segs.filter(s => s.speaker !== 'prospect');
     if (call.pc) call.pc.close(); call.pc = null;
     $('call-remote').srcObject = null; $('call-wait').style.display = 'flex'; $('call-wait').textContent = 'O cliente saiu. Se ele abrir o link de novo, a chamada volta.';
@@ -920,6 +1007,10 @@
       mc.on('stream', onRemoteStream);
       mc.on('close', () => { if (call.media === mc) { call.media = null; call.pc = null; onPeerGone(); } });
     });
+    peer.on('connection', (conn) => {
+      if (call.dc && call.dc !== conn) { try { call.dc.close(); } catch (_) {} }
+      call.dc = conn; conn.on('data', onGuestMsg);
+    });
     peer.on('disconnected', () => { if (call.peer === peer) peer.reconnect(); });
     peer.on('error', (e) => { if (call.peer === peer) toast('Chamada: ' + (e.type || e.message)); });
   }
@@ -929,6 +1020,8 @@
     const pc = call.pc = new RTCPeerConnection({ iceServers: call.ice });
     const out = new MediaStream([...call.local.getAudioTracks(), outgoingVideo()].filter(Boolean));  // camera or its background-processed copy
     out.getTracks().forEach(t => pc.addTrack(t, out));
+    const dc = call.dc = pc.createDataChannel('stt');  // the prospect's free transcription arrives here
+    dc.onmessage = (e) => onGuestMsg(e.data);
     pc.onicecandidate = (e) => sendSig({ type: 'ice', candidate: e.candidate });
     pc.ontrack = (e) => onRemoteStream(e.streams[0]);
     watchConnection(pc);
@@ -942,6 +1035,9 @@
     if (call.media) call.media.close(); call.media = null;
     if (call.peer) call.peer.destroy(); call.peer = null;
     call.segs.forEach(s => s.stop()); call.segs = [];
+    stopRepSTT(); liveRow('prospect', '');
+    if (call.dc) { try { call.dc.close(); } catch (_) {} } call.dc = null;
+    call.sttMode = { rep: 'paid', prospect: 'paid' }; call.recent = []; call.stt = { n: 0, cost: 0, ms: 0 };
     if (call.pc) call.pc.close(); call.pc = null;
     if (call.poll) clearTimeout(call.poll); call.poll = null;
     stopBackground();
@@ -984,10 +1080,11 @@
       $('call-status').textContent = r.has_cloudflared ? `link público falhou (${r.tunnel_error}) · este link só funciona neste computador` : 'link público indisponível: instale o cloudflared · este link só funciona neste computador';
       toast(r.has_cloudflared ? 'Não consegui criar o link público' : 'Falta instalar o cloudflared para gerar o link público');
     }
-    if (!r.stt) toast('Sem OPENROUTER_API_KEY: a chamada funciona, mas sem transcrição');
+    if (!r.stt && !SpeechRec) toast('Sem OPENROUTER_API_KEY e sem Chrome: a chamada funciona, mas sem transcrição');
     $('btn-call-end').disabled = false;
     setToggle('btn-call-mic', '🎙 Microfone', true, false); setToggle('btn-call-cam', '📷 Câmera', true, false);
     call.segs.push(Object.assign(segmenter(call.local, 'rep'), { speaker: 'rep' }));
+    startRepSTT(); sttMeta();
     if (call.signaling === 'peerjs') {
       try { await hostWithPeerJS(); } catch (e) { toast('Não consegui preparar a chamada: ' + e.message); }
       return;
@@ -1026,6 +1123,7 @@
     const on = !(tracks[0] && tracks[0].enabled);
     tracks.forEach(t => { t.enabled = on; });
     if (kind === 'video' && bg.track) bg.track.enabled = on;
+    if (kind === 'audio') { if (on) startRepSTT(); else stopRepSTT(); }  // Chrome's recognizer has its own mic: stop it too
     setToggle(id, label, on, false);
   };
   $('btn-call-mic').addEventListener('click', toggleTrack('audio', 'btn-call-mic', '🎙 Microfone'));
