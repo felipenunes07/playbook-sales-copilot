@@ -1,40 +1,46 @@
 {
-  "_comment": "Roteiro da call da Playbook Lab, na ordem em que o vendedor deve conduzir. Cada etapa tem um objetivo e itens que o copiloto marca sozinho a partir do que o Jev detecta. Tipos de item: fact (fato confirmado pelo Jev), seen (sinal do cliente que apareceu pelo menos uma vez), stage_seen (a call já passou por uma dessas etapas), objection_clear (preço já apareceu e não há objeção em aberto). `ask` é a pergunta sugerida enquanto o item falta.",
+  "_comment": "Roteiro da call no método SPIN (Situação, Problema, Implicação, Necessidade) seguido de proposta e fechamento. Cada etapa tem um objetivo e itens que o copiloto marca sozinho a partir do que o Jev detecta. Tipos de item: fact (fato confirmado pelo Jev), seen (sinal do cliente que apareceu pelo menos uma vez), stage_seen (a call já passou por uma dessas etapas), objection_clear (preço já apareceu e não há objeção em aberto). `ask` é a pergunta sugerida enquanto o item falta. `stages` liga a etapa às fases que o Jev reconhece.",
   "steps": [
     {
-      "id": "abertura",
-      "title": "Abertura",
-      "goal": "Entender por que o cliente marcou a conversa e o momento do negócio dele.",
+      "id": "situacao",
+      "title": "Situação",
+      "goal": "Entender como ele trabalha hoje: processo, equipe e ferramentas. Poucas perguntas, sem interrogatório.",
       "stages": ["opening"],
       "checks": [
-        {"label": "Entendeu o momento do cliente", "stage_seen": ["discovery", "qualification", "pitch_demo", "pricing", "objection_handling", "closing", "next_steps"], "ask": "O que te fez marcar essa conversa agora, e não daqui a três meses?"}
+        {"label": "Cenário atual", "fact": "situation_understood", "ask": "Me conta como funciona hoje a tua prospecção, do primeiro contato até a reunião marcada."}
       ]
     },
     {
-      "id": "descoberta",
-      "title": "Descoberta",
-      "goal": "Achar a dor principal e colocar número nela.",
+      "id": "problema",
+      "title": "Problema",
+      "goal": "Fazer ele dizer, com as palavras dele, o que não funciona ou incomoda.",
       "stages": ["discovery"],
       "checks": [
-        {"label": "Dor identificada", "fact": "pain_identified", "ask": "Qual parte do teu processo comercial mais te toma tempo hoje?"},
-        {"label": "Impacto em números", "fact": "pain_quantified", "ask": "Quantas horas por semana, ou quantos leads por mês, isso te custa hoje?"}
+        {"label": "Dor identificada", "fact": "pain_identified", "ask": "Qual parte desse processo mais te incomoda ou te toma tempo hoje?"}
       ]
     },
     {
-      "id": "qualificacao",
-      "title": "Qualificação",
-      "goal": "Saber quem decide, para quando e quanto ele investe hoje, antes de falar de preço.",
-      "stages": ["qualification"],
+      "id": "implicacao",
+      "title": "Implicação",
+      "goal": "Mostrar o tamanho do problema: o que ele custa em tempo, dinheiro e oportunidades perdidas.",
+      "stages": [],
       "checks": [
-        {"label": "Decisor", "fact": "decision_maker_identified", "ask": "Além de você, mais alguém participa dessa decisão, um sócio por exemplo?"},
-        {"label": "Prazo", "fact": "timeline_known", "ask": "Para quando você gostaria de ter isso rodando?"},
-        {"label": "Orçamento", "fact": "budget_discussed", "ask": "Hoje você já investe em alguma ferramenta ou pessoa para prospecção? Quanto mais ou menos?"}
+        {"label": "Impacto do problema", "fact": "pain_quantified", "ask": "E o que isso te custa? Quantas horas por semana, ou quantos leads por mês esfriam por causa disso?"}
       ]
     },
     {
-      "id": "apresentacao",
-      "title": "Apresentação",
-      "goal": "Mostrar o Sales OS ligado à dor que ele contou, e confirmar que faz sentido para ele.",
+      "id": "necessidade",
+      "title": "Necessidade",
+      "goal": "Fazer ele mesmo dizer o valor de resolver. Quem fala do ganho é o cliente, não você.",
+      "stages": [],
+      "checks": [
+        {"label": "Valor de resolver", "fact": "need_payoff", "ask": "Se isso estivesse resolvido, o que mudaria para você no dia a dia?"}
+      ]
+    },
+    {
+      "id": "proposta",
+      "title": "Proposta",
+      "goal": "Apresentar o Sales OS ligado ao que ele falou e confirmar que faz sentido.",
       "stages": ["pitch_demo"],
       "checks": [
         {"label": "Mostrou a solução", "stage_seen": ["pitch_demo"], "ask": "Posso te mostrar como o Sales OS resolveria exatamente isso que você contou?"},
@@ -42,22 +48,16 @@
       ]
     },
     {
-      "id": "preco",
-      "title": "Preço e objeções",
-      "goal": "Apresentar o investimento ancorado no valor e tratar as dúvidas até não sobrar objeção.",
-      "stages": ["pricing", "objection_handling"],
+      "id": "fechamento",
+      "title": "Fechamento",
+      "goal": "Confirmar quem decide e para quando, apresentar o investimento, tratar objeções e sair com data marcada.",
+      "stages": ["qualification", "pricing", "objection_handling", "closing", "next_steps"],
       "checks": [
+        {"label": "Decisor", "fact": "decision_maker_identified", "ask": "Além de você, mais alguém participa dessa decisão, um sócio por exemplo?"},
+        {"label": "Prazo", "fact": "timeline_known", "ask": "Para quando você gostaria de ter isso rodando?"},
         {"label": "Preço apresentado", "stage_seen": ["pricing"], "ask": "Vou ser direto: o Sales OS é R$ 5.000, dá para parcelar em 2x, e se paga com as horas que você deixa de gastar operando."},
-        {"label": "Objeções tratadas", "objection_clear": true, "ask": "O que você precisaria ver para ficar tranquilo com esse investimento?"}
-      ]
-    },
-    {
-      "id": "proximo_passo",
-      "title": "Próximo passo",
-      "goal": "Sair da call com uma data marcada: proposta revisada juntos, reunião com o sócio ou início.",
-      "stages": ["closing", "next_steps"],
-      "checks": [
-        {"label": "Próximo passo com data", "fact": "next_step_agreed", "ask": "Posso te mandar a proposta hoje e a gente revisa junto na quinta, às 10h?"}
+        {"label": "Objeções tratadas", "objection_clear": true, "ask": "O que você precisaria ver para ficar tranquilo com esse investimento?"},
+        {"label": "Próximo passo com data", "fact": "next_step_agreed", "ask": "Posso te mandar o contrato hoje e a gente começa na segunda? Ou prefere revisar a proposta junto na quinta, às 10h?"}
       ]
     }
   ]

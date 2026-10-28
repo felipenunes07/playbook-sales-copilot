@@ -69,6 +69,12 @@
   .coach .line { padding: 6px 8px; border-radius: 6px; background: var(--panel2); margin-bottom: 4px; font-size: 13px; }
   .coach .line.best { background: #2ecc7122; border: 1px solid #2ecc7166; }
   .coach .line.best::before { content: "diga: "; color: var(--good); font-weight: 700; font-style: normal; }
+  .coach .line.best { font-size: 14.5px; line-height: 1.45; }
+  .coach .badge { display: inline-block; margin-left: 6px; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid #b78bff88; color: var(--accent2); vertical-align: 1px; font-style: normal; }
+  .coach .badge.muted { border-color: var(--border); color: var(--muted); }
+  .coach details.more { margin-top: 6px; }
+  .coach details.more summary { font-size: 12px; color: var(--muted); cursor: pointer; margin-bottom: 4px; }
+  .coach .what { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .coach .line.tailored { background: #b78bff1f; border: 1px solid #b78bff88; font-size: 14px; }
   .coach .line.tailored::before { content: "diga (personalizada): "; color: var(--accent2); font-weight: 700; }
   .coach .line.tailored .meta { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
@@ -440,7 +446,7 @@
     } else if (m.type === 'restored') {
       state.timeline = m.timeline.map((s, i) => ({ ...s, text: state.history[i] ? state.history[i].text : '' }));
       redrawChart(); renderProb(m.probability, null); state.lastProb = m.probability;
-      if (m.coaching) { state.coaching = m.coaching; renderStages(m.stage); renderCoach(m.coaching); renderObjection(m.objection); renderSignals(m.signals); renderTalk(m.talk); renderSens(m.sensitivity); renderRoteiro(m.roteiro); }
+      if (m.coaching) { state.coaching = state.shownCoach = m.coaching; renderStages(m.stage); renderCoach(m.coaching); renderObjection(m.objection); renderSignals(m.signals); renderTalk(m.talk); renderSens(m.sensitivity); renderRoteiro(m.roteiro); }
       if (state.replay && !state.pausedFlag) send({ type: 'start_replay', call: state.replay.call, speed: +$('speed').value, from: state.replay.next, keep: true });
     } else if (m.type === 'reset') {
       clearCall(m.call);
@@ -468,7 +474,7 @@
   // server echoes the reset), so a reconnect can never hand an old call back to the server via `restore`.
   function clearCall(callMeta) {
     state.history = []; state.replay = callMeta ? { call: callMeta.id, next: 0 } : null;
-    state.timeline = []; state.timelineFrom = null; state.lastProb = null; state.prevIndex = -1; state.currentCall = callMeta || null; state.tailored = null; state.pendingMove = null; state.coaching = null;
+    state.timeline = []; state.timelineFrom = null; state.lastProb = null; state.prevIndex = -1; state.currentCall = callMeta || null; state.tailored = null; state.pendingMove = null; state.coaching = null; state.shownCoach = null; state.candidateMove = null;
     $('transcript').innerHTML = ''; $('prob').textContent = '—'; $('prob-delta').textContent = ''; $('replay-progress').textContent = '';
     $('hero-sub').textContent = callMeta ? callMeta.title : (state.mode === 'video' && video.call ? video.call.title : 'nova call');
     redrawChart(); renderStages(null); renderCoach(null); renderObjection(null); $('sens').innerHTML = '<div class="muted">—</div>';
@@ -488,9 +494,9 @@
     redrawChart();
     renderProb(m.probability, state.lastProb); state.lastProb = m.probability;
     addUtterance(m);
-    state.coaching = m.coaching;
-    if (state.tailored && (m.coaching.gated || m.coaching.move_id !== state.tailored.move_id)) state.tailored = null; // move changed: tailored line is stale
-    renderStages(m.stage); renderCoach(m.coaching); renderObjection(m.objection);
+    state.coaching = stableCoach(m.coaching);
+    if (state.tailored && (!state.coaching || state.coaching.gated || state.coaching.move_id !== state.tailored.move_id)) state.tailored = null; // move changed: tailored line is stale
+    renderStages(m.stage); renderCoach(state.coaching); renderObjection(m.objection);
     renderSignals(m.signals); renderTalk(m.talk); renderSens(m.sensitivity); renderRoteiro(m.roteiro);
     const j = m.jev, jl = m.jev_last;
     $('pill-latency').innerHTML = `latência <b>${Math.round(jl.latency_ms)} ms</b> <span class="muted">(média ${Math.round(j.mean_ms)} · p95 ${Math.round(j.p95_ms)})</span>`;
@@ -524,26 +530,39 @@
     $('stages').innerHTML = STAGES.map(s => `<span class="${stage && stage.choice === s ? 'on' : ''}">${STAGE_PT[s]}</span>`).join('');
     $('stage-conf').textContent = stage ? `confiança ${stage.confidence.toFixed(2)}` : '';
   }
+  // One clear line to say. The tailored line replaces the playbook line in place when it arrives; the other lines wait
+  // under "outras opções". Technical details stay in tooltips.
   function renderCoach(c) {
     const el = $('coach');
-    if (!c || c.gated) { el.className = 'coach listening'; el.textContent = c && c.title ? `ouvindo… (tendendo a "${c.title}", confiança ${c.confidence})` : 'ouvindo…'; $('coach-conf').textContent = ''; return; }
+    if (!c || c.gated) { el.className = 'coach listening'; el.textContent = 'ouvindo…'; $('coach-conf').textContent = ''; return; }
     el.className = 'coach';
-    $('coach-conf').textContent = `confiança ${c.confidence.toFixed(2)} ≥ ${state.hello.thresholds.next_move_min_confidence}`;
-    const lines = c.phrasings.map(p => `<div class="line ${p === c.best_phrasing ? 'best' : ''}">${escapeHtml(p)}</div>`);
-    let tailored = '';
-    const t = state.tailored;
-    if (t && t.move_id === c.move_id) {
-      if (t.text) {
-        const v = t.verification || {};
-        const meta = `${t.llm.model} · ${t.llm.latency_ms} ms` + (v.invents_fact != null ? ` · Jev: inventa-fato ${v.invents_fact.toFixed(2)}, na-jogada ${(v.on_move ?? 0).toFixed(2)}` : '') + ` · gatilho: ${t.reason}`;
-        tailored = `<div class="line tailored">${escapeHtml(t.text)}<span class="meta">${escapeHtml(meta)}</span></div>`;
-      } else if (t.rejected && t.candidate) {
-        tailored = `<div class="line rejected" title="${escapeHtml(t.rejected)}">${escapeHtml(t.candidate)} <span class="muted">(${escapeHtml(t.rejected)})</span></div>`;
-      }
+    $('coach-conf').textContent = `confiança ${c.confidence.toFixed(2)}`;
+    const t = state.tailored && state.tailored.move_id === c.move_id ? state.tailored : null;
+    const tailored = !!(t && t.text);
+    const main = tailored ? t.text : (c.best_phrasing || c.phrasings[0] || '');
+    const others = c.phrasings.filter(p => p !== main);
+    let note = '';
+    if (tailored) {
+      const v = t.verification || {};
+      const meta = `${t.llm.model} · ${t.llm.latency_ms} ms` + (v.invents_fact != null ? ` · Jev: inventa-fato ${v.invents_fact.toFixed(2)}, na-jogada ${(v.on_move ?? 0).toFixed(2)}` : '');
+      note = `<span class="badge" title="${escapeHtml(meta)}">personalizada</span>`;
     } else if (state.pendingMove === c.move_id) {
-      tailored = `<div class="line pending">personalizando uma fala para este momento…</div>`;
+      note = `<span class="badge muted">personalizando…</span>`;
     }
-    el.innerHTML = `<div class="title">${escapeHtml(c.title)}</div><div class="what">${escapeHtml(c.what)}</div>${tailored}${lines.join('')}`;
+    el.innerHTML = `<div class="title">${escapeHtml(c.title)}</div><div class="what">${escapeHtml(c.what)}</div>`
+      + `<div class="line best">${escapeHtml(main)} ${note}</div>`
+      + (others.length ? `<details class="more"><summary>outras opções (${others.length})</summary>${others.map(p => `<div class="line">${escapeHtml(p)}</div>`).join('')}</details>` : '');
+  }
+  // Keep the tip steady: an uncertain new move must show up twice in a row before replacing the current one, and an
+  // unsure moment keeps the last tip instead of flipping back to "ouvindo…".
+  function stableCoach(c) {
+    const shown = state.shownCoach;
+    if (!c || c.gated) return shown || c;
+    if (!shown || c.move_id === shown.move_id || c.confidence >= 0.6 || state.candidateMove === c.move_id) {
+      state.candidateMove = null; state.shownCoach = c; return c;
+    }
+    state.candidateMove = c.move_id;
+    return shown;
   }
   // The call roadmap: where the rep is in the process, what is still missing, and the next question to ask.
   function renderRoteiro(r) {
@@ -813,7 +832,7 @@
   }
 
   function segmenter(stream, speaker) {
-    const RATE = 16000, GATE = 0.012, END_SILENCE_MS = 600, MAX_MS = 10000, MIN_SPEECH_MS = 450;  // short pauses close a segment: text shows up sooner
+    const RATE = 16000, GATE = 0.012, END_SILENCE_MS = 600, MAX_MS = 6000, MIN_SPEECH_MS = 450;  // short pauses close a segment, and a long turn is analyzed every 6 s instead of at its end
     const ctx = new AudioContext({ sampleRate: RATE });
     const src = ctx.createMediaStreamSource(stream);
     const proc = ctx.createScriptProcessor(2048, 1, 1);

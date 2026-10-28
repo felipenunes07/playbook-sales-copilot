@@ -218,10 +218,20 @@ QUESTIONS: dict[str, dict[str, Any]] = {
         true="Prospect mentions things like hours of manual work, leads or follow-ups falling through, no time to prospect, losing customers or deals, a process that does not scale, or paying for a tool that does not work.",
         false="Only the rep talks about problems in general, or the prospect says things are fine.",
     ),
+    "situation_understood": _noul(
+        "In `recent_transcript`, has the prospect described how they work today: their current process, team, tools, or channels?",
+        true="'I do all the prospecting myself on LinkedIn', 'we have two SDRs and use HubSpot', 'today it's all spreadsheets and WhatsApp'.",
+        false="Only greetings or small talk so far, or only the rep has talked about processes.",
+    ),
     "pain_quantified": _noul(
-        "In `recent_transcript`, has the prospect put a number on their problem or its cost: hours spent, money, leads, deals, customers, or jobs lost per week or month?",
-        true="'About ten hours a week', 'we lose maybe ten leads a month', 'it costs us around fifteen thousand a month', 'half my week goes into this'.",
-        false="The problem was described only in words, or only the rep mentioned numbers.",
+        "In `recent_transcript`, has the prospect described the consequences or the cost of their problem: hours, money, leads, deals, or customers lost, or what it prevents them from doing?",
+        true="'About ten hours a week', 'we lose maybe ten leads a month', 'I end up not having time to deliver for clients', 'it costs us around fifteen thousand a month'.",
+        false="The problem was only named, without its consequences, or only the rep talked about the impact.",
+    ),
+    "need_payoff": _noul(
+        "In `recent_transcript`, has the prospect said, in their own words, what solving the problem would be worth to them or what would change if it were solved?",
+        true="'If that worked I could focus on closing', 'that would free half my week', 'it would let me grow without hiring now', 'that would solve my follow-up problem'.",
+        false="Only the rep described benefits, or the prospect has not talked about the value of a solution.",
     ),
     "budget_discussed": _noul(
         "In `recent_transcript`, has money been discussed: the price or investment of the rep's offer, or the prospect's budget, what they pay today, or whether funds are available?",
@@ -346,7 +356,9 @@ SIGNAL_WEIGHTS: dict[str, dict[str, Any]] = {
     # positive, durable facts
     "next_step_agreed": {"kind": "fact", "weight": 0.09, "label": "Próximo passo combinado"},
     "pain_identified": {"kind": "fact", "weight": 0.05, "label": "Dor identificada"},
-    "pain_quantified": {"kind": "fact", "weight": 0.03, "label": "Impacto em números"},
+    "situation_understood": {"kind": "fact", "weight": 0.02, "label": "Cenário atual entendido"},
+    "pain_quantified": {"kind": "fact", "weight": 0.03, "label": "Impacto do problema"},
+    "need_payoff": {"kind": "fact", "weight": 0.05, "label": "Cliente vê valor em resolver"},
     "budget_discussed": {"kind": "fact", "weight": 0.04, "label": "Preço/orçamento discutido"},
     "decision_maker_identified": {"kind": "fact", "weight": 0.04, "label": "Decisor identificado"},
     "timeline_known": {"kind": "fact", "weight": 0.04, "label": "Prazo conhecido"},

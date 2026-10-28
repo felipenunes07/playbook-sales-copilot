@@ -460,17 +460,16 @@ async def test_roteiro_guides_step_by_step(mock_judge_factory, helpers):
     stages = list(C.STAGES)
     judge = mock_judge_factory([
         {"stage": choice("opening", 0.9, stages)},
-        {"stage": choice("discovery", 0.9, stages), "pain_identified": noul(0.9)},
+        {"stage": choice("discovery", 0.9, stages), "situation_understood": noul(0.9), "pain_identified": noul(0.9)},
         {"stage": choice("pricing", 0.9, stages)},
     ])
     s = CallSession(judge)
-    r = (await s.ingest("rep", "Oi, obrigado pelo tempo, o que te fez marcar a conversa?", 0))["roteiro"]
-    assert r["current"] == 0 and r["next_ask"]  # abertura, with a question ready
-    r = (await s.ingest("prospect", "Faço a prospecção sozinho e perco muito lead sem follow-up.", 5))["roteiro"]
+    r = (await s.ingest("rep", "Oi, obrigado pelo tempo. Como funciona hoje a tua prospecção?", 0))["roteiro"]
+    assert r["steps"][r["current"]]["id"] == "situacao" and r["next_ask"]  # SPIN starts at Situação, question ready
+    r = (await s.ingest("prospect", "Faço a prospecção sozinho no LinkedIn e perco muito lead sem follow-up.", 5))["roteiro"]
     steps = {st["id"]: st for st in r["steps"]}
-    assert steps["abertura"]["done"]
-    assert [i["done"] for i in steps["descoberta"]["items"]] == [True, False]  # pain yes, numbers not yet
-    assert r["steps"][r["current"]]["id"] == "descoberta" and "Quantas horas" in r["next_ask"]
+    assert steps["situacao"]["done"] and steps["problema"]["done"]
+    assert r["steps"][r["current"]]["id"] == "implicacao" and "custa" in r["next_ask"]  # next: the cost of the problem
     r = (await s.ingest("rep", "O investimento é cinco mil, em duas vezes.", 10))["roteiro"]
-    assert r["steps"][r["current"]]["id"] == "preco"  # the conversation jumped ahead
-    assert {g["label"] for g in r["gaps"]} >= {"Impacto em números", "Decisor", "Prazo"}  # what was skipped
+    assert r["steps"][r["current"]]["id"] == "fechamento"  # the conversation jumped to price
+    assert {g["label"] for g in r["gaps"]} >= {"Impacto do problema", "Valor de resolver"}  # what SPIN skipped
