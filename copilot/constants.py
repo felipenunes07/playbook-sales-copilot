@@ -24,7 +24,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai"
 OPENROUTER_DECISIONS_PATH = "/api/alpha/decisions"
 OPENROUTER_JEV_MODEL = "typesafe/jev-1.13"
 OPENROUTER_STT_MODEL = "openai/gpt-audio-mini"  # video call transcription: ~$0.0008/min of speech, PT-BR verified
-OPENROUTER_LLM_MODEL = "anthropic/claude-haiku-5.5"  # tailored phrasing when no ANTHROPIC_API_KEY; cheaper models (Llama 3.1 8B) invent facts and get dropped
+OPENROUTER_LLM_MODEL = "qwen/qwen3.7-flash"  # tailored phrasing when no ANTHROPIC_API_KEY: ~5x cheaper than Claude Haiku 5.5 with the same quality in PT-BR (tested 2026-10-28)
 # BeatAPI: one request per utterance; free accounts only get the `-free` models
 BEATAPI_BASE_URL = "https://api.beatapi.io"
 BEATAPI_MODEL = "jev-1.13-free"

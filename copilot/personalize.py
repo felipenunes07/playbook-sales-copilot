@@ -217,6 +217,7 @@ class OpenRouterPersonalizer:
             "model": self.model,
             "max_tokens": C.LLM_MAX_OUTPUT_TOKENS,
             "temperature": 0.4,
+            "reasoning": {"enabled": False},  # one spoken sentence needs no thinking; reasoning models otherwise run out of tokens
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": build_prompt(move, transcript, facts, objection)},
