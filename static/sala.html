@@ -5,8 +5,8 @@
 <title>Chamada de vídeo</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <style>
-  :root { --bg: #000; --panel: #0c0c0c; --border: #232323; --text: #ededed; --muted: #8a8a8a; --accent: #ededed; --bad: #ef4444;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+  :root { --bg: #0e1117; --panel: #161b22; --border: #2a3140; --text: #e6e9ef; --muted: #8b95a7; --accent: #6ea8fe; --bad: #ff5c5c;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
   .stage { position: fixed; inset: 0; background: #000; }
@@ -15,9 +15,10 @@
   .status { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); text-align: center; color: var(--muted); font-size: 17px; padding: 0 16px; width: 100%; max-width: 440px; }
   .status b { color: var(--text); display: block; font-size: 22px; margin-bottom: 8px; }
   .bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; gap: 14px; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, #000c); }
-  button { border: 0; border-radius: 999px; padding: 14px 20px; font-size: 15px; font-weight: 600; cursor: pointer; background: #1c1c1c; color: var(--text); }
-  button.off { background: #ef444433; color: var(--bad); }
-  button.primary { background: var(--accent); color: #000; font-size: 17px; padding: 16px 28px; }
+  button { border: 0; border-radius: 999px; padding: 14px 20px; font-size: 15px; font-weight: 600; cursor: pointer; background: #2a3140; color: var(--text); transition: background .15s; }
+  button:hover { background: #343d50; }
+  button.off { background: #ff5c5c33; color: var(--bad); }
+  button.primary { background: var(--accent); color: #0b0f16; font-size: 17px; padding: 16px 28px; }
   button.leave { background: var(--bad); color: #fff; }
   .hidden { display: none !important; }
 </style>

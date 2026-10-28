@@ -4,6 +4,8 @@
 <meta charset="utf-8" />
 <title>Sales Copilot · Jev</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root {
@@ -115,6 +117,66 @@
   #call-link { min-width: 300px; }
   .toast { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 14px; border-radius: 8px; display: none; z-index: 10; }
   @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+
+  /* ---- finish layer: same layout and blue palette, modern details ---- */
+  :root { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; --ring: 0 0 0 3px #6ea8fe40; --shadow: 0 1px 0 #ffffff08 inset, 0 8px 24px #00000040; }
+  body { background: radial-gradient(1200px 600px at 10% -10%, #1a2540 0%, transparent 60%), var(--bg); background-attachment: fixed; -webkit-font-smoothing: antialiased; }
+  header { background: #161b22d9; backdrop-filter: blur(10px); padding: 12px 20px; }
+  header h1 { font-size: 16px; letter-spacing: 0; }
+  header h1 .muted { font-weight: 400; }
+  .pill { padding: 4px 10px; background: #1c2330b3; }
+  .pill.ok { color: var(--text); }
+  .pill.ok::before { content: "● "; color: var(--good); font-size: 10px; vertical-align: 1px; }
+  .controls { background: #161b22b3; padding: 10px 20px; }
+  .tabs { border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .tabs button { border-radius: 7px; padding: 7px 13px; transition: background .15s, color .15s; }
+  .tabs button:hover { color: var(--text); background: #ffffff0a; }
+  .tabs button.active { box-shadow: 0 2px 10px #6ea8fe40; }
+  button.btn { border-radius: 8px; padding: 7px 13px; transition: border-color .15s, background .15s, transform .05s; }
+  button.btn:hover:not(:disabled) { background: #232c3c; }
+  button.btn:active:not(:disabled) { transform: translateY(1px); }
+  button.btn:disabled { opacity: .45; cursor: default; }
+  button.btn.primary:hover:not(:disabled) { background: #85b6ff; }
+  button.btn.danger:hover:not(:disabled) { background: #ff5c5c1a; }
+  button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: none; box-shadow: var(--ring); border-color: var(--accent); }
+  select, input[type=text], input[type=number] { border-radius: 8px; padding: 7px 10px; transition: border-color .15s; }
+  select { max-width: min(420px, 100%); cursor: pointer; }
+  select:hover, input[type=text]:hover { border-color: #3a4560; }
+  input[type=range] { accent-color: var(--accent); }
+  main { gap: 16px; padding: 16px 20px 28px; }
+  .stack { gap: 16px; }
+  .card { border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .card h3 { font-size: 11.5px; letter-spacing: 1px; margin-bottom: 10px; }
+  .bignum { background: linear-gradient(180deg, #1f2738, #1a2130); border: 1px solid var(--border); border-radius: 12px; }
+  .bignum .n { font-size: 56px; letter-spacing: -1px; }
+  .utt { border-radius: 10px; padding: 7px 10px; line-height: 1.45; border: 1px solid transparent; transition: background .15s; }
+  .utt:hover { background: #222b3b; }
+  .utt.latest { outline: none; border-color: #6ea8fe80; background: #6ea8fe12; }
+  .transcript:empty::before { content: "As falas aparecem aqui conforme a conversa acontece. Escolha um modo acima: Replay, Vídeo, Microfone, Digitar ou Chamada de vídeo."; color: var(--muted); font-size: 13px; line-height: 1.5; padding: 10px 2px; }
+  .stage span { border-radius: 999px; padding: 4px 10px; border-color: var(--border); }
+  .coach { border-left-width: 3px; padding-left: 12px; }
+  .coach .title { font-size: 18px; letter-spacing: -0.2px; }
+  .coach .line { border-radius: 8px; padding: 8px 10px; line-height: 1.45; border: 1px solid transparent; }
+  .sig { border-radius: 8px; padding: 6px 9px; }
+  .bar { height: 8px; }
+  .sens div { border-radius: 8px; }
+  table.w tr:hover td { background: #ffffff05; }
+  .playerwrap, .callwrap { border-radius: 12px; }
+  .callwrap #call-local { border-radius: 10px; box-shadow: 0 6px 18px #00000080; }
+  .toast { border-radius: 10px; box-shadow: 0 10px 30px #00000080; font-size: 13px; animation: toast-in .18s ease-out; }
+  @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  * { scrollbar-width: thin; scrollbar-color: #2f3a4e transparent; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: #2f3a4e; border-radius: 8px; }
+  @media (max-width: 760px) {
+    header, .controls { position: static; padding: 10px 14px; }
+    header h1 .muted { display: none; }
+    main { padding: 12px 14px 24px; }
+    input[type=text], #call-link { min-width: 0; width: 100%; }
+    .mode { width: 100%; }
+    .hero { grid-template-columns: 1fr; }
+    .signals { grid-template-columns: 1fr; }
+    .utt { grid-template-columns: 40px 64px 1fr 40px; }
+  }
 </style>
 </head>
 <body>
@@ -171,8 +233,8 @@
     <button class="btn" id="btn-call-mic" disabled>🎙 Microfone ligado</button>
     <button class="btn" id="btn-call-cam" disabled>📷 Câmera ligada</button>
     <select id="call-bg" title="fundo da sua câmera">
+      <option value="blur" selected>Fundo: desfocado</option>
       <option value="none">Fundo: nenhum</option>
-      <option value="blur">Fundo: desfocado</option>
       <option value="image">Fundo: imagem</option>
       <option value="pick">Fundo: trocar imagem…</option>
     </select>
@@ -315,7 +377,7 @@
     if (m.type === 'hello') {
       state.hello = m; state.defaultsWeights = m.weights;
       $('pill-model').innerHTML = `modelo <b>${m.model}</b>`;
-      $('pill-llm').innerHTML = m.llm ? `llm <b>${m.llm}</b> <span class="muted">frase personalizada ativa</span>` : `llm <b>off</b> <span class="muted">defina ANTHROPIC_API_KEY</span>`;
+      $('pill-llm').innerHTML = m.llm ? `frase <b>${m.llm.split('/').pop()}</b>` : `frase <b>off</b>`;
       $('alpha').textContent = m.ema_alpha;
       const sel = $('call-select'); sel.innerHTML = '';
       m.calls.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.title} (${c.utterances} falas, ${Math.round(c.duration_s / 60)} min)`; sel.appendChild(o); });
@@ -324,12 +386,15 @@
       if (!vsel.options.length) { const o = document.createElement('option'); o.textContent = 'nenhuma call com vídeo em data/calls'; o.disabled = true; vsel.appendChild(o); }
       renderStages(null); renderWeights(m.weights); renderSignalsSkeleton(m.weights);
       if (!m.has_api_key) toast('O servidor está sem chave de API: defina OPENROUTER_API_KEY (ou TYPESAFE_API_KEY) e reinicie ou republique.');
+    } else if (m.type === 'phrasing_pending') {
+      state.pendingMove = m.move_id; renderCoach(state.coaching);
     } else if (m.type === 'phrasing') {
+      state.pendingMove = null;
       // tailored line from the LLM (already verified by Jev server-side); keep it only while the move is unchanged
       state.tailored = { move_id: m.move_id, index: m.index, text: m.text, rejected: m.rejected, candidate: m.candidate, llm: m.llm, verification: m.verification, reason: m.reason };
       renderCoach(state.coaching);
       const l = m.llm;
-      $('pill-llm').innerHTML = `llm <b>${l.model}</b> <span class="muted">${l.latency_ms} ms · ${l.shown} exibidas / ${l.rejected} descartadas · $${l.cum_cost_usd.toFixed(4)}</span>`;
+      $('pill-llm').innerHTML = `frase <b>${l.model.split('/').pop()}</b> <span class="muted">${l.shown}✓ ${l.rejected}✗</span>`; $('pill-llm').title = `${l.model} · ${l.latency_ms} ms · ${l.shown} exibidas / ${l.rejected} descartadas · $${l.cum_cost_usd.toFixed(4)}`;
       if (l.error) toast('Erro do LLM: ' + l.error);
     } else if (m.type === 'restored') {
       state.timeline = m.timeline.map((s, i) => ({ ...s, text: state.history[i] ? state.history[i].text : '' }));
@@ -348,7 +413,8 @@
       document.querySelectorAll('#transcript .utt').forEach((el, i) => { const s = state.timeline[i]; if (s) el.querySelector('.p').textContent = Math.round(s.probability * 100) + '%'; });
       toast('Linha do tempo recalculada com os novos pesos (0 chamadas ao Jev)', false);
     } else if (m.type === 'stopped') {
-      state.replay = null;
+      if (state.replay) $('replay-progress').textContent += ' · parado';
+      state.replay = null; state.pausedFlag = false; $('btn-pause').textContent = '⏸ Pausar';
     } else if (m.type === 'replay_done') {
       state.replay = null;
       $('replay-progress').textContent = `concluído · final ${Math.round(m.final_probability * 100)}%`;
@@ -361,7 +427,7 @@
   // server echoes the reset), so a reconnect can never hand an old call back to the server via `restore`.
   function clearCall(callMeta) {
     state.history = []; state.replay = callMeta ? { call: callMeta.id, next: 0 } : null;
-    state.timeline = []; state.timelineFrom = null; state.lastProb = null; state.prevIndex = -1; state.currentCall = callMeta || null; state.tailored = null; state.coaching = null;
+    state.timeline = []; state.timelineFrom = null; state.lastProb = null; state.prevIndex = -1; state.currentCall = callMeta || null; state.tailored = null; state.pendingMove = null; state.coaching = null;
     $('transcript').innerHTML = ''; $('prob').textContent = '—'; $('prob-delta').textContent = ''; $('replay-progress').textContent = '';
     $('hero-sub').textContent = callMeta ? callMeta.title : (state.mode === 'video' && video.call ? video.call.title : 'nova call');
     redrawChart(); renderStages(null); renderCoach(null); renderObjection(null); $('sens').innerHTML = '<div class="muted">—</div>';
@@ -432,7 +498,7 @@
       } else if (t.rejected && t.candidate) {
         tailored = `<div class="line rejected" title="${escapeHtml(t.rejected)}">${escapeHtml(t.candidate)} <span class="muted">(${escapeHtml(t.rejected)})</span></div>`;
       }
-    } else if (state.hello && state.hello.llm && !(state.hello.personalize_skip_moves || []).includes(c.move_id)) {
+    } else if (state.pendingMove === c.move_id) {
       tailored = `<div class="line pending">personalizando uma fala para este momento…</div>`;
     }
     el.innerHTML = `<div class="title">${escapeHtml(c.title)}</div><div class="what">${escapeHtml(c.what)}</div>${tailored}${lines.join('')}`;
@@ -479,6 +545,13 @@
 
   // ---------- controls ----------
   document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.mode === state.mode) return;
+    // one source feeds the copilot at a time: a running call or microphone ends before switching mode
+    if (call.local && b.dataset.mode !== 'call') {
+      if (!confirm('Há uma chamada em andamento. Encerrar a chamada e trocar de modo?')) return;
+      stopCall(true);
+    }
+    if (state.recognizing && b.dataset.mode !== 'live') stopMic();
     document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
     document.querySelectorAll('.mode').forEach(m => m.classList.toggle('active', m.id === 'mode-' + b.dataset.mode));
     const isVideo = b.dataset.mode === 'video';
@@ -521,10 +594,15 @@
   $('spk-prospect').addEventListener('click', () => setSpeaker('prospect'));
   document.addEventListener('keydown', (e) => { if (e.key.toLowerCase() === 's' && document.activeElement.tagName !== 'INPUT') setSpeaker(state.speaker === 'rep' ? 'prospect' : 'rep'); });
   let rec = null;
+  function stopMic() {
+    state.recognizing = false;
+    if (rec) { try { rec.stop(); } catch (_) {} }
+    $('btn-mic').textContent = '🎙 Iniciar microfone'; $('interim').textContent = '';
+  }
   $('btn-mic').addEventListener('click', () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { toast('Web Speech API indisponível. Use o Chrome ou a aba Digitar.'); return; }
-    if (state.recognizing) { state.recognizing = false; rec.stop(); $('btn-mic').textContent = '🎙 Iniciar microfone'; return; }
+    if (state.recognizing) { stopMic(); return; }
     rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = 'pt-BR';
     rec.onresult = (ev) => {
       let interim = '';
@@ -761,7 +839,15 @@
     $('call-local').srcObject = call.local; $('call-card').classList.add('on');
     if (bg.mode !== 'none') setBackground(bg.mode);
     resetCall();  // the call starts from zero, with nothing left from a replay or a recording
-    const r = await (await fetch('/api/sala', { method: 'POST' })).json();
+    let r;
+    try {
+      const resp = await fetch('/api/sala', { method: 'POST' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      r = await resp.json();
+    } catch (e) {
+      stopCall(false); $('call-status').textContent = 'não consegui criar a sala, tente de novo';
+      toast('Não consegui criar a sala: ' + e.message); return;
+    }
     call.room = r.room; call.ice = r.ice;
     if (r.guest_url) {
       $('call-link').value = r.guest_url; $('btn-call-copy').disabled = false;
@@ -823,7 +909,7 @@
   // stream replaces the camera track sent to the prospect (and the local preview). Nothing leaves the browser.
   const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
   const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
-  const bg = { mode: 'none', img: null, seg: null, loading: null, video: null, canvas: null, person: null, mask: null, maskData: null, track: null, running: false, lastTs: -1 };
+  const bg = { mode: 'blur', img: null, seg: null, loading: null, video: null, canvas: null, person: null, mask: null, maskData: null, track: null, running: false, lastTs: -1 };
   const remember = (k, v) => { try { localStorage.setItem('copilot.bg.' + k, v); } catch (_) {} };
   const recall = (k) => { try { return localStorage.getItem('copilot.bg.' + k); } catch (_) { return null; } };
 
@@ -937,8 +1023,8 @@
   (async () => {  // restore the last choice
     const saved = recall('image');
     if (saved) { try { const r = await fetch(saved); bg.img = await createImageBitmap(await r.blob()); } catch (_) {} }
-    const mode = recall('mode');
-    if (mode === 'blur' || (mode === 'image' && bg.img)) { bg.mode = mode; $('call-bg').value = mode; }
+    const mode = recall('mode') || 'blur';  // blurred background unless the rep chose otherwise
+    bg.mode = mode === 'image' && !bg.img ? 'blur' : mode; $('call-bg').value = bg.mode;
   })();
 
   window.addEventListener('beforeunload', () => { if (call.room) sendSig({ type: 'bye' }, true); });

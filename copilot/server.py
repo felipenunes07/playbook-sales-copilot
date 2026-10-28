@@ -303,6 +303,7 @@ class Connection:
     async def _personalize(self, index: int, move: dict[str, Any], transcript: list[dict[str, Any]], facts: list[str], objection: dict[str, Any] | None, reason: str) -> None:
         assert self.session is not None and self.personalizer is not None
         self.llm_stats["requests"] += 1
+        await self.send({"type": "phrasing_pending", "index": index, "move_id": move["id"]})  # the UI shows "personalizando…" only while this runs
         try:
             res = await self.personalizer(move, transcript, facts, objection)
         except asyncio.CancelledError:
