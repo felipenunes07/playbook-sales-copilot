@@ -1,0 +1,29 @@
+# Publishes the copilot to Vercel production on every push to main.
+# Needs one repository secret, VERCEL_TOKEN (vercel.com/account/tokens). Without it (e.g. in a fork) the job is skipped.
+name: Deploy na Vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: vercel-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: team_Jn1oFSdhdDGTU2lgrUAzqOo1
+      VERCEL_PROJECT_ID: prj_eefFaaWzOVW2SiWiqEqym48qYGpK
+    steps:
+      - name: Sem VERCEL_TOKEN, nada a publicar
+        if: env.VERCEL_TOKEN == ''
+        run: echo "Defina o secret VERCEL_TOKEN para publicar automaticamente na Vercel."
+      - uses: actions/checkout@v4
+        if: env.VERCEL_TOKEN != ''
+      - name: Publicar em produção
+        if: env.VERCEL_TOKEN != ''
+        run: npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"

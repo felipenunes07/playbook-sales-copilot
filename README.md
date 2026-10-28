@@ -90,6 +90,11 @@ O projeto já vem pronto para a Vercel (`app.py`, `vercel.json`, `.vercelignore`
 3. Para a **Chamada de vídeo**, adicione **Upstash Redis** pelo Marketplace da Vercel (plano grátis). Sem ele, você e
    o cliente podem cair em servidores diferentes e a chamada não conecta.
 
+**Publicação automática:** `.github/workflows/deploy-vercel.yml` publica em produção a cada push na `main`. Crie
+um token em [vercel.com/account/tokens](https://vercel.com/account/tokens), salve no repositório em **Settings →
+Secrets and variables → Actions** com o nome `VERCEL_TOKEN` e troque `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` no arquivo
+pelos do seu projeto. Sem o token, a automação não faz nada.
+
 Como a Vercel encerra conexões longas (cerca de 5 minutos no plano grátis), o navegador reconecta sozinho e devolve a
 call ao servidor, que continua a análise de onde parou sem chamar o Jev de novo.
 
