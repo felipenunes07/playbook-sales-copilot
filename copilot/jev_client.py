@@ -114,6 +114,13 @@ class HostedJevJudge:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    async def warm(self) -> None:
+        """Open the TLS connection ahead of the first utterance, so it doesn't pay the handshake."""
+        try:
+            await self._client.head("/")
+        except Exception:  # noqa: BLE001
+            pass
+
     async def _post(self, body: dict[str, Any]) -> dict[str, Any]:
         import hashlib
         import json

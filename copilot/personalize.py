@@ -212,12 +212,20 @@ class OpenRouterPersonalizer:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    async def warm(self) -> None:
+        """Open the TLS connection ahead of the first rewrite."""
+        try:
+            await self._client.head("/")
+        except Exception:  # noqa: BLE001
+            pass
+
     async def __call__(self, move: Mapping[str, Any], transcript: list[Mapping[str, Any]], facts: list[str], objection: Mapping[str, Any] | None) -> PhrasingResult:
         body = {
             "model": self.model,
             "max_tokens": C.LLM_MAX_OUTPUT_TOKENS,
             "temperature": 0.4,
             "reasoning": {"enabled": False},  # one spoken sentence needs no thinking; reasoning models otherwise run out of tokens
+            "provider": {"sort": "latency"},  # the line has to land while the moment is still on
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": build_prompt(move, transcript, facts, objection)},

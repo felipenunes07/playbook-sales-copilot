@@ -390,6 +390,9 @@ async def websocket(ws: WebSocket) -> None:
         return
     await ws.accept()
     conn = Connection(ws, ws.app.state.judge, getattr(ws.app.state, "personalizer", None))
+    for client in (ws.app.state.judge, conn.personalizer):  # warm the provider connections while the UI loads
+        if hasattr(client, "warm"):
+            asyncio.create_task(client.warm())
     await conn.send(
         {
             "type": "hello",

@@ -495,7 +495,7 @@
     redrawChart();
     renderProb(m.probability, state.lastProb); state.lastProb = m.probability;
     addUtterance(m);
-    state.coaching = stableCoach(m.coaching);
+    state.coaching = stableCoach(m.coaching, m.speaker);
     if (state.tailored && (!state.coaching || state.coaching.gated || state.coaching.move_id !== state.tailored.move_id)) state.tailored = null; // move changed: tailored line is stale
     renderStages(m.stage); renderCoach(state.coaching); renderObjection(m.objection);
     renderSignals(m.signals); renderTalk(m.talk); renderSens(m.sensitivity); renderRoteiro(m.roteiro);
@@ -556,10 +556,12 @@
   }
   // Keep the tip steady: an uncertain new move must show up twice in a row before replacing the current one, and an
   // unsure moment keeps the last tip instead of flipping back to "ouvindo…".
-  function stableCoach(c) {
+  // What the prospect just said always switches the card at once (objection, buying signal...). A rep line only
+  // switches it when Jev is fairly sure, or the same move comes twice, so the card doesn't flicker while the rep talks.
+  function stableCoach(c, speaker) {
     const shown = state.shownCoach;
     if (!c || c.gated) return shown || c;
-    if (!shown || c.move_id === shown.move_id || c.confidence >= 0.6 || state.candidateMove === c.move_id) {
+    if (!shown || speaker === 'prospect' || c.move_id === shown.move_id || c.confidence >= 0.45 || state.candidateMove === c.move_id) {
       state.candidateMove = null; state.shownCoach = c; return c;
     }
     state.candidateMove = c.move_id;
@@ -835,7 +837,7 @@
   }
 
   function segmenter(stream, speaker) {
-    const RATE = 16000, GATE = 0.012, END_SILENCE_MS = 600, MAX_MS = 6000, MIN_SPEECH_MS = 450;  // short pauses close a segment, and a long turn is analyzed every 6 s instead of at its end
+    const RATE = 16000, GATE = 0.012, END_SILENCE_MS = 450, MAX_MS = 4000, MIN_SPEECH_MS = 450;  // short pauses close a segment, and a long turn is analyzed every 4 s instead of at its end
     const ctx = new AudioContext({ sampleRate: RATE });
     const src = ctx.createMediaStreamSource(stream);
     const proc = ctx.createScriptProcessor(2048, 1, 1);
