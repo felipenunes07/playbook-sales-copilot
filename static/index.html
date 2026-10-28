@@ -733,7 +733,7 @@
   // /api/transcribe; the text comes back and goes to the copilot as a normal utterance for that speaker.
   // Signaling goes through the server over plain HTTP (post + poll), so it works when the rep and the prospect reach
   // different serverless instances.
-  const call = { pc: null, poll: null, room: null, ice: null, local: null, segs: [], start: null, stt: { n: 0, cost: 0, ms: 0 } };
+  const call = { pc: null, poll: null, room: null, ice: null, signaling: 'server', peer: null, media: null, local: null, segs: [], start: null, stt: { n: 0, cost: 0, ms: 0 } };
   const sigUrl = (what) => `/sala/${encodeURIComponent(call.room)}/${what}?role=host`;
   const sendSig = (m, keepalive = false) => { if (call.room) fetch(sigUrl('send'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m), keepalive }).catch(() => {}); };
   const callT = () => (call.start ? (Date.now() - call.start) / 1000 : 0);
@@ -789,31 +789,69 @@
     } catch (e) { toast('Transcrição falhou: ' + e); }
   }
 
+  // The prospect's stream arrived (either signaling path): show it and transcribe it as `prospect`.
+  function onRemoteStream(stream) {
+    if ($('call-remote').srcObject !== stream) $('call-remote').srcObject = stream;  // also needed for Chrome to feed remote audio to WebAudio
+    $('call-wait').style.display = 'none';
+    if (!call.start) call.start = Date.now();
+    const audio = stream.getAudioTracks()[0];
+    if (audio && !call.segs.some(s => s.speaker === 'prospect')) {
+      call.segs.push(Object.assign(segmenter(new MediaStream([audio]), 'prospect'), { speaker: 'prospect' }));
+    }
+    $('call-status').textContent = 'em chamada · fale normalmente, o copiloto separa quem fala sozinho';
+  }
+  function onPeerGone() {
+    call.segs.filter(s => s.speaker === 'prospect').forEach(s => s.stop()); call.segs = call.segs.filter(s => s.speaker !== 'prospect');
+    if (call.pc) call.pc.close(); call.pc = null;
+    $('call-remote').srcObject = null; $('call-wait').style.display = 'flex'; $('call-wait').textContent = 'O cliente saiu. Se ele abrir o link de novo, a chamada volta.';
+  }
+  const watchConnection = (pc) => {
+    pc.addEventListener('connectionstatechange', () => {
+      if (pc.connectionState === 'failed') { $('call-status').textContent = 'a conexão de vídeo falhou (rede bloqueada) · peça ao cliente para tentar outra rede'; toast('A conexão de vídeo falhou'); }
+    });
+  };
+  // Without a shared queue on serverless hosts, call setup goes through the public PeerJS broker (it also brings TURN).
+  const peerId = (room) => 'pbl-' + room.replace(/[^A-Za-z0-9]/g, '');
+  function loadPeerJS() {
+    if (window.Peer) return Promise.resolve();
+    return new Promise((res, rej) => {
+      const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
+      s.onload = res; s.onerror = () => rej(new Error('PeerJS indisponível')); document.head.appendChild(s);
+    });
+  }
+  async function hostWithPeerJS() {
+    await loadPeerJS();
+    const peer = call.peer = new Peer(peerId(call.room));
+    peer.on('call', (mc) => {
+      if (call.media) call.media.close();
+      call.media = mc;
+      $('call-wait').textContent = 'Cliente entrou, conectando…';
+      mc.answer(new MediaStream([...call.local.getAudioTracks(), outgoingVideo()].filter(Boolean)));
+      call.pc = mc.peerConnection; watchConnection(call.pc);
+      mc.on('stream', onRemoteStream);
+      mc.on('close', () => { if (call.media === mc) { call.media = null; call.pc = null; onPeerGone(); } });
+    });
+    peer.on('disconnected', () => { if (call.peer === peer) peer.reconnect(); });
+    peer.on('error', (e) => { if (call.peer === peer) toast('Chamada: ' + (e.type || e.message)); });
+  }
+
   async function makeOffer() {
     if (call.pc) call.pc.close();
     const pc = call.pc = new RTCPeerConnection({ iceServers: call.ice });
     const out = new MediaStream([...call.local.getAudioTracks(), outgoingVideo()].filter(Boolean));  // camera or its background-processed copy
     out.getTracks().forEach(t => pc.addTrack(t, out));
     pc.onicecandidate = (e) => sendSig({ type: 'ice', candidate: e.candidate });
-    pc.ontrack = (e) => {
-      if ($('call-remote').srcObject !== e.streams[0]) $('call-remote').srcObject = e.streams[0];  // also needed for Chrome to feed remote audio to WebAudio
-      $('call-wait').style.display = 'none';
-      if (!call.start) call.start = Date.now();
-      if (e.track.kind === 'audio' && !call.segs.some(s => s.speaker === 'prospect')) {
-        call.segs.push(Object.assign(segmenter(new MediaStream([e.track]), 'prospect'), { speaker: 'prospect' }));
-      }
-      $('call-status').textContent = 'em chamada · fale normalmente, o copiloto separa quem fala sozinho';
-    };
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') { $('call-status').textContent = 'a conexão de vídeo falhou (rede bloqueada) · peça ao cliente para tentar outra rede'; toast('A conexão de vídeo falhou'); }
-    };
+    pc.ontrack = (e) => onRemoteStream(e.streams[0]);
+    watchConnection(pc);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     sendSig({ type: 'offer', sdp: offer.sdp });
   }
 
   function stopCall(notify = true) {
-    if (notify) sendSig({ type: 'bye' });
+    if (notify && call.signaling === 'server') sendSig({ type: 'bye' });
+    if (call.media) call.media.close(); call.media = null;
+    if (call.peer) call.peer.destroy(); call.peer = null;
     call.segs.forEach(s => s.stop()); call.segs = [];
     if (call.pc) call.pc.close(); call.pc = null;
     if (call.poll) clearTimeout(call.poll); call.poll = null;
@@ -848,7 +886,7 @@
       stopCall(false); $('call-status').textContent = 'não consegui criar a sala, tente de novo';
       toast('Não consegui criar a sala: ' + e.message); return;
     }
-    call.room = r.room; call.ice = r.ice;
+    call.room = r.room; call.ice = r.ice; call.signaling = r.signaling || 'server';
     if (r.guest_url) {
       $('call-link').value = r.guest_url; $('btn-call-copy').disabled = false;
       $('call-status').textContent = 'link pronto · envie ao cliente (WhatsApp, e-mail…)';
@@ -861,15 +899,15 @@
     $('btn-call-end').disabled = false;
     setToggle('btn-call-mic', '🎙 Microfone', true, false); setToggle('btn-call-cam', '📷 Câmera', true, false);
     call.segs.push(Object.assign(segmenter(call.local, 'rep'), { speaker: 'rep' }));
+    if (call.signaling === 'peerjs') {
+      try { await hostWithPeerJS(); } catch (e) { toast('Não consegui preparar a chamada: ' + e.message); }
+      return;
+    }
     const onSignal = async (m) => {
       if (m.type === 'peer-joined') { $('call-wait').textContent = 'Cliente entrou, conectando…'; await makeOffer(); }
       else if (m.type === 'answer' && call.pc) await call.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp });
       else if (m.type === 'ice' && call.pc) { try { await call.pc.addIceCandidate(m.candidate || null); } catch (_) {} }
-      else if (m.type === 'peer-left' || m.type === 'bye') {
-        call.segs.filter(s => s.speaker === 'prospect').forEach(s => s.stop()); call.segs = call.segs.filter(s => s.speaker !== 'prospect');
-        if (call.pc) call.pc.close(); call.pc = null;
-        $('call-remote').srcObject = null; $('call-wait').style.display = 'flex'; $('call-wait').textContent = 'O cliente saiu. Se ele abrir o link de novo, a chamada volta.';
-      }
+      else if (m.type === 'peer-left' || m.type === 'bye') onPeerGone();
     };
     const room = call.room;
     const poll = async () => {
@@ -964,7 +1002,7 @@
     bg.track = bg.canvas.captureStream(30).getVideoTracks()[0];
     bg.track.enabled = cam.enabled;
     bg.running = true;
-    const next = () => (bg.video.requestVideoFrameCallback ? bg.video.requestVideoFrameCallback(step) : requestAnimationFrame(step));
+    const next = () => requestAnimationFrame(step);  // the source <video> is not in the page, so frame callbacks would never fire
     const step = () => {
       if (!bg.running) return;
       const ts = performance.now();
@@ -1027,7 +1065,7 @@
     bg.mode = mode === 'image' && !bg.img ? 'blur' : mode; $('call-bg').value = bg.mode;
   })();
 
-  window.addEventListener('beforeunload', () => { if (call.room) sendSig({ type: 'bye' }, true); });
+  window.addEventListener('beforeunload', () => { if (call.room && call.signaling === 'server') sendSig({ type: 'bye' }, true); if (call.peer) call.peer.destroy(); });
 
   connect();
 })();

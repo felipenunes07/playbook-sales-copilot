@@ -39,7 +39,7 @@
   const $ = (id) => document.getElementById(id);
   const room = location.pathname.split('/').filter(Boolean).pop();
   let ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
-  let pc = null, local = null, left = false, timer = null;
+  let pc = null, local = null, left = false, timer = null, mode = 'server', peer = null, media = null;
 
   const status = (title, text) => { $('status').classList.remove('hidden'); $('status').innerHTML = `<b>${title}</b>${text || ''}`; };
   const hideStatus = () => $('status').classList.add('hidden');
@@ -85,8 +85,57 @@
     timer = setTimeout(poll, 700);
   }
 
+  // Without a shared queue on serverless hosts, call setup goes through the public PeerJS broker (it also brings TURN).
+  const hostId = 'pbl-' + room.replace(/[^A-Za-z0-9]/g, '');
+  function loadPeerJS() {
+    if (window.Peer) return Promise.resolve();
+    return new Promise((res, rej) => {
+      const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
+      s.onload = res; s.onerror = () => rej(new Error('PeerJS')); document.head.appendChild(s);
+    });
+  }
+  function callHost() {
+    if (left || !peer || peer.destroyed) return;
+    if (media) media.close();
+    const mc = media = peer.call(hostId, local);
+    if (!mc) { timer = setTimeout(callHost, 2000); return; }
+    mc.on('stream', (stream) => { if ($('remote').srcObject !== stream) $('remote').srcObject = stream; hideStatus(); });
+    mc.on('close', () => {
+      if (left || media !== mc) return;
+      $('remote').srcObject = null;
+      status('Aguardando…', 'A outra pessoa saiu da chamada. Ela pode voltar a qualquer momento.');
+      timer = setTimeout(callHost, 2000);
+    });
+    const watch = () => {
+      if (!mc.peerConnection) return setTimeout(watch, 200);
+      mc.peerConnection.addEventListener('connectionstatechange', () => {
+        if (mc.peerConnection.connectionState === 'failed') status('Não foi possível conectar', 'A rede bloqueou a conexão de vídeo. Tente outra rede (por exemplo, os dados do celular).');
+      });
+    };
+    watch();
+  }
+  async function connectPeerJS() {
+    await loadPeerJS();
+    peer = new Peer();
+    peer.on('open', callHost);
+    peer.on('error', (e) => {
+      if (left) return;
+      if (e.type === 'peer-unavailable') { status('Aguardando…', 'Você entrou. A chamada começa assim que a outra pessoa estiver na sala.'); timer = setTimeout(callHost, 2000); }
+      else status('Não foi possível conectar', 'Recarregue a página para tentar de novo.');
+    });
+    peer.on('disconnected', () => { if (!left) peer.reconnect(); });
+  }
+
   async function connect() {
-    try { const r = await fetch(`/sala/${room}/ice`); if (r.ok) ICE = await r.json(); } catch (_) {}
+    try {
+      const r = await fetch(`/sala/${room}/config`);
+      if (r.status === 404) { status('Sala não encontrada', 'Este link expirou. Peça um novo link.'); return; }
+      if (r.ok) { const c = await r.json(); ICE = c.ice || ICE; mode = c.signaling || 'server'; }
+    } catch (_) {}
+    if (mode === 'peerjs') {
+      try { await connectPeerJS(); } catch (_) { status('Não foi possível conectar', 'Recarregue a página para tentar de novo.'); }
+      return;
+    }
     await send({ type: 'peer-joined' });
     poll();
   }
@@ -105,9 +154,11 @@
   const toggle = (kind, btn) => () => { const t = local.getTracks().find(x => x.kind === kind); t.enabled = !t.enabled; $(btn).classList.toggle('off', !t.enabled); };
   $('mic').onclick = toggle('audio', 'mic');
   $('cam').onclick = toggle('video', 'cam');
-  window.addEventListener('beforeunload', () => { if (local && !left) send({ type: 'bye' }, true); });
+  window.addEventListener('beforeunload', () => { if (local && !left && mode === 'server') send({ type: 'bye' }, true); if (peer) peer.destroy(); });
   $('leave').onclick = () => {
-    left = true; send({ type: 'bye' }, true); clearTimeout(timer);
+    left = true; clearTimeout(timer);
+    if (mode === 'server') send({ type: 'bye' }, true);
+    if (media) media.close(); if (peer) peer.destroy();
     if (pc) pc.close(); local.getTracks().forEach(t => t.stop());
     $('bar').classList.add('hidden'); $('local').classList.add('hidden'); $('remote').srcObject = null;
     status('Você saiu da chamada', 'Pode fechar esta página.');

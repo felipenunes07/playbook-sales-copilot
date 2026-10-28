@@ -112,3 +112,11 @@ def test_rooms_survive_another_instance(monkeypatch):
     room = V.new_room()
     monkeypatch.setattr(V, "_LOCAL_SECRET", b"another process")
     assert V.room_valid(room)
+
+
+def test_signaling_mode_falls_back_to_peerjs_on_vercel(monkeypatch, client):
+    room = client.post("/api/sala").json()
+    assert room["signaling"] == "server"  # one local process: its own queue is shared by both browsers
+    monkeypatch.setenv("VERCEL", "1")  # serverless without Upstash: instances share nothing
+    assert client.get(f"/sala/{room['room']}/config", headers=PUBLIC).json()["signaling"] == "peerjs"
+    assert client.get("/sala/nope/config", headers=PUBLIC).status_code == 404

@@ -22,7 +22,7 @@ from .engine import CallSession
 from .jev_client import JevJudge, make_judge, resolve_api_key
 from .personalize import PersonalizeState, make_personalizer, Personalizer, resolve_llm_key, should_personalize, verify_with_jev
 from .replay import list_calls, load_call, load_remote_calls
-from .videocall import SIGNAL_TYPES, Signaling, Tunnel, find_cloudflared, is_local, make_store, make_transcriber, new_room, room_valid
+from .videocall import SIGNAL_TYPES, Signaling, Tunnel, UpstashStore, find_cloudflared, is_local, make_store, make_transcriber, new_room, room_valid
 from . import auth
 
 log = logging.getLogger("copilot.server")
@@ -116,6 +116,13 @@ async def health() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Video call: room + link, guest page, transcription, signaling (HTTP post + poll)
 # ---------------------------------------------------------------------------
+def signaling_mode() -> str:
+    """How the two browsers exchange call setup messages: through this server (one process locally, or a shared
+    Upstash queue), or through the public PeerJS broker when serverless instances share nothing."""
+    shared = isinstance(app.state.signaling.store, UpstashStore) or not os.environ.get("VERCEL")
+    return "server" if shared else "peerjs"
+
+
 def ice_servers() -> list[dict[str, Any]]:
     """STUN by default; set ICE_SERVERS (JSON list, e.g. a TURN service) for networks that block peer-to-peer."""
     try:
@@ -142,6 +149,7 @@ async def create_room(request: Request) -> dict[str, Any]:
         "has_cloudflared": find_cloudflared() is not None,
         "stt": app.state.transcriber.model if app.state.transcriber else None,
         "ice": ice_servers(),
+        "signaling": signaling_mode(),
     }
 
 
@@ -150,6 +158,13 @@ async def guest_page(room: str) -> Any:
     if not room_valid(room):
         return JSONResponse({"error": "sala não encontrada"}, status_code=404)
     return FileResponse(STATIC_DIR / "sala.html", headers=NO_CACHE)
+
+
+@app.get("/sala/{room}/config")
+async def guest_config(room: str) -> Any:
+    if not room_valid(room):
+        return JSONResponse({"error": "sala não encontrada"}, status_code=404)
+    return {"ice": ice_servers(), "signaling": signaling_mode()}
 
 
 @app.get("/sala/{room}/ice")
