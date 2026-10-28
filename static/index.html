@@ -167,6 +167,10 @@
   @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
   * { scrollbar-width: thin; scrollbar-color: #2f3a4e transparent; }
   ::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: #2f3a4e; border-radius: 8px; }
+  .ai-toggle { border-color: #2ecc7166; }
+  .ai-toggle.off { border-color: var(--warn); color: var(--warn); background: #f5b9421a; }
+  .ai-banner { display: none; padding: 9px 20px; background: #f5b9421a; border-bottom: 1px solid #f5b94255; color: var(--warn); font-size: 13px; }
+  .ai-banner.on { display: block; }
   @media (max-width: 760px) {
     header, .controls { position: static; padding: 10px 14px; }
     header h1 .muted { display: none; }
@@ -188,8 +192,11 @@
   <span class="pill" id="pill-tokens">tokens <b>0</b></span>
   <span class="pill" id="pill-llm" title="frase personalizada: um LLM pequeno reescreve a fala escolhida do playbook; o Jev verifica">llm <b>—</b></span>
   <span class="spacer"></span>
+  <button class="btn ai-toggle" id="btn-ai" title="Pausar a IA: a conversa continua, mas nada é transcrito, analisado ou cobrado">🤖 IA ligada</button>
   <span class="pill" id="pill-conn">conectando…</span>
 </header>
+
+<div class="ai-banner" id="ai-banner">⏸ IA pausada: a conversa continua normalmente, mas nada está sendo transcrito, analisado ou cobrado. Clique em <b>IA pausada</b> no topo para religar.</div>
 
 <div class="controls">
   <div class="tabs">
@@ -335,7 +342,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const WHO = { rep: 'vendedor', prospect: 'prospect' };
-  const state = { history: [], replay: null, mode: 'replay', timelineFrom: null, ws: null, hello: null, defaultsWeights: [], timeline: [], lastProb: null, speaker: 'rep', recognizing: false, liveStart: null, currentCall: null, prevIndex: -1, coaching: null, tailored: null };
+  const state = { aiOn: true, history: [], replay: null, mode: 'replay', timelineFrom: null, ws: null, hello: null, defaultsWeights: [], timeline: [], lastProb: null, speaker: 'rep', recognizing: false, liveStart: null, currentCall: null, prevIndex: -1, coaching: null, tailored: null };
 
   // ---------- chart ----------
   const ctx = $('chart').getContext('2d');
@@ -371,7 +378,19 @@
     ws.onclose = () => { $('pill-conn').textContent = 'desconectado · tentando de novo'; $('pill-conn').className = 'pill err'; setTimeout(connect, 1500); };
     ws.onmessage = (ev) => handle(JSON.parse(ev.data));
   }
-  const send = (o) => { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify(o)); };
+  const PAID = new Set(['utterance', 'start_replay']);  // what makes the server call Jev (and the phrasing LLM)
+  const send = (o) => {
+    if (!state.aiOn && PAID.has(o.type)) return false;  // AI paused: the conversation goes on, nothing is analyzed or billed
+    if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify(o));
+    return true;
+  };
+  function setAI(on) {
+    state.aiOn = on;
+    const b = $('btn-ai');
+    b.textContent = on ? '🤖 IA ligada' : '⏸ IA pausada'; b.classList.toggle('off', !on);
+    $('ai-banner').classList.toggle('on', !on);
+    if (!on) send({ type: 'stop' });  // a running replay stops spending too
+  }
 
   function handle(m) {
     if (m.type === 'hello') {
@@ -567,7 +586,7 @@
     if (!isVideo && video.player && video.player.pauseVideo) video.player.pauseVideo();
   }));
   $('speed').addEventListener('input', () => { $('speed-val').textContent = $('speed').value + '×'; send({ type: 'set_speed', speed: +$('speed').value }); });
-  $('btn-play').addEventListener('click', () => { send({ type: 'start_replay', call: $('call-select').value, speed: +$('speed').value }); $('btn-pause').textContent = '⏸ Pausar'; state.pausedFlag = false; });
+  $('btn-play').addEventListener('click', () => { if (!state.aiOn) { toast('A IA está pausada: religue no topo para analisar'); return; } send({ type: 'start_replay', call: $('call-select').value, speed: +$('speed').value }); $('btn-pause').textContent = '⏸ Pausar'; state.pausedFlag = false; });
   $('btn-pause').addEventListener('click', () => { state.pausedFlag = !state.pausedFlag; send({ type: state.pausedFlag ? 'pause' : 'resume' }); $('btn-pause').textContent = state.pausedFlag ? '▶ Retomar' : '⏸ Pausar'; });
   $('btn-stop').addEventListener('click', () => send({ type: 'stop' }));
   $('btn-reset').addEventListener('click', resetCall);
@@ -580,7 +599,7 @@
   // typed utterances
   function sendTyped() {
     const text = $('type-text').value.trim(); if (!text) return;
-    send({ type: 'utterance', speaker: $('type-speaker').value, text, t: liveT() });
+    if (!send({ type: 'utterance', speaker: $('type-speaker').value, text, t: liveT() })) { toast('A IA está pausada: religue no topo para analisar'); return; }
     $('type-text').value = '';
     $('type-speaker').value = $('type-speaker').value === 'rep' ? 'prospect' : 'rep'; // alternate by default
   }
@@ -781,6 +800,7 @@
   }
 
   async function transcribe(wav, speaker, t) {
+    if (!state.aiOn) return;  // AI paused: the audio is not sent anywhere
     try {
       const r = await (await fetch('/api/transcribe', { method: 'POST', body: wav })).json();
       if (r.error) { toast('Transcrição: ' + r.error); return; }
@@ -1067,6 +1087,7 @@
 
   window.addEventListener('beforeunload', () => { if (call.room && call.signaling === 'server') sendSig({ type: 'bye' }, true); if (call.peer) call.peer.destroy(); });
 
+  $('btn-ai').addEventListener('click', () => setAI(!state.aiOn));
   connect();
 })();
 </script>
