@@ -168,6 +168,8 @@
     <button class="btn primary" id="btn-call-start">📹 Criar sala e ligar câmera</button>
     <input type="text" id="call-link" readonly placeholder="o link para o cliente aparece aqui" />
     <button class="btn" id="btn-call-copy" disabled>Copiar link</button>
+    <button class="btn" id="btn-call-mic" disabled>🎙 Microfone ligado</button>
+    <button class="btn" id="btn-call-cam" disabled>📷 Câmera ligada</button>
     <button class="btn danger" id="btn-call-end" disabled>Encerrar</button>
     <span class="muted" id="call-status">use fone de ouvido · seu microfone = vendedor · áudio do cliente = prospect</span>
   </div>
@@ -356,6 +358,9 @@
     $('transcript').innerHTML = ''; $('prob').textContent = '—'; $('prob-delta').textContent = ''; $('replay-progress').textContent = '';
     $('hero-sub').textContent = callMeta ? callMeta.title : (state.mode === 'video' && video.call ? video.call.title : 'nova call');
     redrawChart(); renderStages(null); renderCoach(null); renderObjection(null); $('sens').innerHTML = '<div class="muted">—</div>';
+    if (state.hello) renderSignalsSkeleton(state.hello.weights);
+    renderTalk({ ratio_rep: 0.5, rep_words: 0, prospect_words: 0, pace_wpm_rep: '—', pace_wpm_prospect: '—', rep_monologue: false });
+    $('talk-ratio').textContent = '—';
   }
   function resetCall() { send({ type: 'reset' }); clearCall(null); state.liveStart = null; }
 
@@ -730,6 +735,7 @@
     $('call-remote').srcObject = null; $('call-local').srcObject = null; $('call-wait').style.display = 'flex';
     $('call-wait').textContent = 'Envie o link ao cliente. A chamada começa quando ele entrar.';
     $('btn-call-start').disabled = false; $('btn-call-end').disabled = true; $('btn-call-copy').disabled = true; $('call-link').value = '';
+    setToggle('btn-call-mic', '🎙 Microfone', true, true); setToggle('btn-call-cam', '📷 Câmera', true, true);
     $('call-status').textContent = 'chamada encerrada';
     call.room = null; call.start = null;
   }
@@ -757,6 +763,7 @@
     }
     if (!r.stt) toast('Sem OPENROUTER_API_KEY: a chamada funciona, mas sem transcrição');
     $('btn-call-end').disabled = false;
+    setToggle('btn-call-mic', '🎙 Microfone', true, false); setToggle('btn-call-cam', '📷 Câmera', true, false);
     call.segs.push(Object.assign(segmenter(call.local, 'rep'), { speaker: 'rep' }));
     const onSignal = async (m) => {
       if (m.type === 'peer-joined') { $('call-wait').textContent = 'Cliente entrou, conectando…'; await makeOffer(); }
@@ -785,6 +792,20 @@
     catch (_) { $('call-link').select(); document.execCommand('copy'); toast('Link copiado', false); }
   });
   $('btn-call-end').addEventListener('click', () => stopCall(true));
+  // Mute / camera off for the rep. A muted mic sends silence, so nothing of the rep is transcribed meanwhile.
+  function setToggle(id, label, on, disabled) {
+    const b = $(id); b.disabled = disabled; b.classList.toggle('danger', !on);
+    b.textContent = `${label} ${on ? 'ligad' : 'desligad'}${label.includes('Câmera') ? 'a' : 'o'}`;
+  }
+  const toggleTrack = (kind, id, label) => () => {
+    if (!call.local) return;
+    const tracks = call.local.getTracks().filter(t => t.kind === kind);
+    const on = !(tracks[0] && tracks[0].enabled);
+    tracks.forEach(t => { t.enabled = on; });
+    setToggle(id, label, on, false);
+  };
+  $('btn-call-mic').addEventListener('click', toggleTrack('audio', 'btn-call-mic', '🎙 Microfone'));
+  $('btn-call-cam').addEventListener('click', toggleTrack('video', 'btn-call-cam', '📷 Câmera'));
   window.addEventListener('beforeunload', () => { if (call.room) sendSig({ type: 'bye' }, true); });
 
   connect();
