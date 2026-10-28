@@ -258,6 +258,7 @@
 
   <div class="mode" id="mode-call">
     <button class="btn primary" id="btn-call-start">📹 Criar sala e ligar câmera</button>
+    <button class="btn" id="btn-meet-start" title="A reunião continua no Meet, Zoom ou Teams. O copiloto ouve a aba da reunião (cliente) e o seu microfone (você).">🖥 Usar com Meet/Zoom</button>
     <input type="text" id="call-link" readonly placeholder="o link para o cliente aparece aqui" />
     <button class="btn" id="btn-call-copy" disabled>Copiar link</button>
     <button class="btn" id="btn-call-mic" disabled>🎙 Microfone ligado</button>
@@ -1031,6 +1032,8 @@
   }
 
   function stopCall(notify = true) {
+    if (call.meet) { call.meet.getTracks().forEach(t => t.stop()); call.meet = null; }
+    $('call-remote').muted = false;
     if (notify && call.signaling === 'server') sendSig({ type: 'bye' });
     if (call.media) call.media.close(); call.media = null;
     if (call.peer) call.peer.destroy(); call.peer = null;
@@ -1044,19 +1047,19 @@
     if (call.local) call.local.getTracks().forEach(t => t.stop()); call.local = null;
     $('call-remote').srcObject = null; $('call-local').srcObject = null; $('call-wait').style.display = 'flex';
     $('call-wait').textContent = 'Envie o link ao cliente. A chamada começa quando ele entrar.';
-    $('btn-call-start').disabled = false; $('btn-call-end').disabled = true; $('btn-call-copy').disabled = true; $('call-link').value = '';
+    $('btn-call-start').disabled = false; $('btn-meet-start').disabled = false; $('btn-call-end').disabled = true; $('btn-call-copy').disabled = true; $('call-link').value = '';
     setToggle('btn-call-mic', '🎙 Microfone', true, true); setToggle('btn-call-cam', '📷 Câmera', true, true);
     $('call-status').textContent = 'chamada encerrada';
     call.room = null; call.start = null;
   }
 
   $('btn-call-start').addEventListener('click', async () => {
-    $('btn-call-start').disabled = true;
+    $('btn-call-start').disabled = true; $('btn-meet-start').disabled = true;
     $('call-status').textContent = 'ligando câmera e criando o link…';
     try {
       call.local = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     } catch (e) {
-      $('btn-call-start').disabled = false; $('call-status').textContent = 'sem acesso à câmera/microfone';
+      $('btn-call-start').disabled = false; $('btn-meet-start').disabled = false; $('call-status').textContent = 'sem acesso à câmera/microfone';
       toast('Permita câmera e microfone no navegador'); return;
     }
     $('call-local').srcObject = call.local; $('call-card').classList.add('on');
@@ -1106,6 +1109,39 @@
     };
     sendSig({ type: 'peer-joined' });
     poll();
+  });
+  // ---------- Meet/Zoom/Teams: the meeting stays where it is; the copilot listens to the shared meeting tab and the mic ----------
+  // The meeting tab only plays the other participants (never your own voice), so tab audio = prospect and mic = rep.
+  $('btn-meet-start').addEventListener('click', async () => {
+    $('btn-call-start').disabled = true; $('btn-meet-start').disabled = true;
+    const fail = (msg) => { stopCall(false); $('call-status').textContent = msg; toast(msg); };
+    let mic, tab;
+    try {
+      mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    } catch (_) { fail('sem acesso ao microfone'); return; }
+    call.local = mic;
+    $('call-status').textContent = 'escolha a aba da reunião e marque "Compartilhar áudio da guia"';
+    try {
+      tab = await navigator.mediaDevices.getDisplayMedia({
+        video: true, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        selfBrowserSurface: 'exclude', systemAudio: 'include', surfaceSwitching: 'include',
+      });
+    } catch (_) { fail('compartilhamento cancelado'); return; }
+    call.meet = tab;
+    const audio = tab.getAudioTracks()[0];
+    if (!audio) { fail('Sem o áudio da reunião: compartilhe de novo e marque "Compartilhar áudio da guia"'); return; }
+    tab.getVideoTracks().forEach(t => t.addEventListener('ended', () => { if (call.meet === tab) stopCall(false); }));  // "Parar compartilhamento"
+    resetCall();
+    $('call-card').classList.add('on');
+    $('call-remote').muted = true;  // the meeting is already playing in its own tab
+    $('call-remote').srcObject = tab; $('call-local').srcObject = null; $('call-wait').style.display = 'none';
+    call.start = Date.now();
+    call.segs.push(Object.assign(segmenter(mic, 'rep'), { speaker: 'rep' }));
+    call.segs.push(Object.assign(segmenter(new MediaStream([audio]), 'prospect'), { speaker: 'prospect' }));
+    startRepSTT(); sttMeta();
+    $('btn-call-end').disabled = false;
+    setToggle('btn-call-mic', '🎙 Microfone', true, false);
+    $('call-status').textContent = 'ouvindo a reunião · use fone de ouvido · para parar, clique em Encerrar';
   });
   $('btn-call-copy').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText($('call-link').value); toast('Link copiado', false); }
