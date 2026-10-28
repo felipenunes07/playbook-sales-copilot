@@ -328,11 +328,7 @@
       if (m.coaching) { state.coaching = m.coaching; renderStages(m.stage); renderCoach(m.coaching); renderObjection(m.objection); renderSignals(m.signals); renderTalk(m.talk); renderSens(m.sensitivity); }
       if (state.replay && !state.pausedFlag) send({ type: 'start_replay', call: state.replay.call, speed: +$('speed').value, from: state.replay.next, keep: true });
     } else if (m.type === 'reset') {
-      state.history = []; state.replay = m.call ? { call: m.call.id, next: 0 } : null;
-      state.timeline = []; state.lastProb = null; state.prevIndex = -1; state.currentCall = m.call; state.tailored = null; state.coaching = null;
-      $('transcript').innerHTML = ''; $('prob').textContent = '—'; $('prob-delta').textContent = ''; $('replay-progress').textContent = '';
-      $('hero-sub').textContent = m.call ? m.call.title : ($('video-card').classList.contains('on') && video.call ? video.call.title : 'nova call');
-      redrawChart(); renderStages(null); renderCoach(null); renderObjection(null); $('sens').innerHTML = '<div class="muted">—</div>';
+      clearCall(m.call);
       if (m.weights) renderWeights(m.weights);
     } else if (m.type === 'update') {
       applyUpdate(m);
@@ -351,6 +347,17 @@
       toast(m.message);
     }
   }
+
+  // Forget the current call in this tab. Done right away when the user starts something new (not only when the
+  // server echoes the reset), so a reconnect can never hand an old call back to the server via `restore`.
+  function clearCall(callMeta) {
+    state.history = []; state.replay = callMeta ? { call: callMeta.id, next: 0 } : null;
+    state.timeline = []; state.timelineFrom = null; state.lastProb = null; state.prevIndex = -1; state.currentCall = callMeta || null; state.tailored = null; state.coaching = null;
+    $('transcript').innerHTML = ''; $('prob').textContent = '—'; $('prob-delta').textContent = ''; $('replay-progress').textContent = '';
+    $('hero-sub').textContent = callMeta ? callMeta.title : (state.mode === 'video' && video.call ? video.call.title : 'nova call');
+    redrawChart(); renderStages(null); renderCoach(null); renderObjection(null); $('sens').innerHTML = '<div class="muted">—</div>';
+  }
+  function resetCall() { send({ type: 'reset' }); clearCall(null); state.liveStart = null; }
 
   function applyUpdate(m) {
     state.history.push({ speaker: m.speaker, text: m.text, t: m.t, answers: m.answers });
@@ -465,11 +472,12 @@
     const isVideo = b.dataset.mode === 'video';
     $('call-card').classList.toggle('on', b.dataset.mode === 'call' || !!call.local);
     // Microfone/Digitar start a fresh call instead of appending to a replayed or video call
-    if ((b.dataset.mode === 'live' || b.dataset.mode === 'type' || b.dataset.mode === 'call') && state.timeline.length && (state.timelineFrom === 'replay' || state.timelineFrom === 'video')) {
-      send({ type: 'stop' }); send({ type: 'reset' }); state.liveStart = null;
-      if (video.player && video.player.pauseVideo) video.player.pauseVideo();
-    }
+    if (!isVideo) { stopVideoLoop(); if (video.player) video.detached = true; }  // the recording no longer feeds the copilot
+    const leaving = state.timelineFrom === 'replay' || state.timelineFrom === 'video';
     state.mode = b.dataset.mode;
+    if ((b.dataset.mode === 'live' || b.dataset.mode === 'type' || b.dataset.mode === 'call') && state.timeline.length && leaving) {
+      send({ type: 'stop' }); resetCall();
+    }
     $('video-card').classList.toggle('on', isVideo && !!video.player);
     if (!isVideo && video.player && video.player.pauseVideo) video.player.pauseVideo();
   }));
@@ -477,7 +485,7 @@
   $('btn-play').addEventListener('click', () => { send({ type: 'start_replay', call: $('call-select').value, speed: +$('speed').value }); $('btn-pause').textContent = '⏸ Pausar'; state.pausedFlag = false; });
   $('btn-pause').addEventListener('click', () => { state.pausedFlag = !state.pausedFlag; send({ type: state.pausedFlag ? 'pause' : 'resume' }); $('btn-pause').textContent = state.pausedFlag ? '▶ Retomar' : '⏸ Pausar'; });
   $('btn-stop').addEventListener('click', () => send({ type: 'stop' }));
-  $('btn-reset').addEventListener('click', () => { send({ type: 'reset' }); state.liveStart = null; });
+  $('btn-reset').addEventListener('click', resetCall);
   $('btn-apply').addEventListener('click', () => {
     const weights = {}; document.querySelectorAll('#weights input').forEach(i => weights[i.dataset.signal] = +i.value);
     send({ type: 'set_weights', weights });
@@ -536,12 +544,13 @@
   }
   const fireAt = (u) => (u.t_end != null ? u.t_end : u.t);
   function videoReset(seekT) {
-    send({ type: 'reset' });
-    video.next = 0; video.lastT = seekT || 0;
+    resetCall();
+    video.next = 0; video.lastT = seekT || 0; video.detached = false;
     $('hero-sub').textContent = video.call ? video.call.title : 'call em vídeo';
     if (seekT > 0) videoTick(seekT); // catch up silently to the new position
   }
   function videoTick(now) {
+    if (state.mode !== 'video' || !video.call) return;  // only the Vídeo tab feeds the copilot from the recording
     const utts = video.call.utterances;
     while (video.next < utts.length && fireAt(utts[video.next]) <= now) {
       const u = utts[video.next++];
@@ -551,7 +560,8 @@
   }
   const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   function syncTo(now) {
-    if (now < video.lastT - 1.5) { videoReset(now); return; } // scrubbed backwards
+    if (state.mode !== 'video') return;
+    if (video.detached || now < video.lastT - 1.5) { videoReset(now); return; } // came back from another tab, or scrubbed backwards
     video.lastT = now;
     videoTick(now);
   }
@@ -734,7 +744,7 @@
       toast('Permita câmera e microfone no navegador'); return;
     }
     $('call-local').srcObject = call.local; $('call-card').classList.add('on');
-    send({ type: 'reset' }); state.liveStart = null;
+    resetCall();  // the call starts from zero, with nothing left from a replay or a recording
     const r = await (await fetch('/api/sala', { method: 'POST' })).json();
     call.room = r.room; call.ice = r.ice;
     if (r.guest_url) {
