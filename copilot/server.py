@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from . import constants as C
@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Sales Copilot (Jev)", lifespan=lifespan)
-PUBLIC_PATHS = ("/sala/", "/login")
+PUBLIC_PATHS = ("/sala/", "/login", "/manifest.webmanifest", "/icons/")  # the browser fetches the app manifest without cookies
 
 
 @app.middleware("http")
@@ -85,6 +85,20 @@ async def require_login(request: Request, call_next):
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html", headers=NO_CACHE)
+
+
+# Installable app: Chrome/Edge offer "Instalar" and open the copilot in its own window with this icon
+@app.get("/manifest.webmanifest")
+async def manifest() -> FileResponse:
+    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json", headers=NO_CACHE)
+
+
+@app.get("/icons/{name}")
+async def icon(name: str) -> FileResponse:
+    path = STATIC_DIR / "icons" / Path(name).name
+    if path.suffix != ".png" or not path.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(path, media_type="image/png")
 
 
 @app.get("/login")
