@@ -453,3 +453,24 @@ def test_private_calls_load_from_urls(monkeypatch):
     assert "secret_call" in [c["id"] for c in R.list_calls()]
     call = R.load_call("secret_call")
     assert call["utterances"][0]["speaker"] == "rep" and call["video"]["url"].endswith("v.mp4")
+
+
+async def test_roteiro_guides_step_by_step(mock_judge_factory, helpers):
+    noul, choice = helpers["noul"], helpers["choice"]
+    stages = list(C.STAGES)
+    judge = mock_judge_factory([
+        {"stage": choice("opening", 0.9, stages)},
+        {"stage": choice("discovery", 0.9, stages), "pain_identified": noul(0.9)},
+        {"stage": choice("pricing", 0.9, stages)},
+    ])
+    s = CallSession(judge)
+    r = (await s.ingest("rep", "Oi, obrigado pelo tempo, o que te fez marcar a conversa?", 0))["roteiro"]
+    assert r["current"] == 0 and r["next_ask"]  # abertura, with a question ready
+    r = (await s.ingest("prospect", "Faço a prospecção sozinho e perco muito lead sem follow-up.", 5))["roteiro"]
+    steps = {st["id"]: st for st in r["steps"]}
+    assert steps["abertura"]["done"]
+    assert [i["done"] for i in steps["descoberta"]["items"]] == [True, False]  # pain yes, numbers not yet
+    assert r["steps"][r["current"]]["id"] == "descoberta" and "Quantas horas" in r["next_ask"]
+    r = (await s.ingest("rep", "O investimento é cinco mil, em duas vezes.", 10))["roteiro"]
+    assert r["steps"][r["current"]]["id"] == "preco"  # the conversation jumped ahead
+    assert {g["label"] for g in r["gaps"]} >= {"Impacto em números", "Decisor", "Prazo"}  # what was skipped

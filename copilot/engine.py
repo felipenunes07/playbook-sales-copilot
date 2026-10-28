@@ -186,6 +186,7 @@ class CallSession:
         self.errors = 0
         self.last_model: str | None = None
         self.prospect_scores: dict[str, float] = {}  # engagement/urgency as last judged on a real prospect turn
+        self.seen: set[str] = set()  # prospect signals that showed up at least once (roadmap items like "cliente validou")
 
     # -- state for Jev --------------------------------------------------------
     def build_state(self, latest: Utterance) -> dict[str, Any]:
@@ -394,6 +395,11 @@ class CallSession:
         # durable facts and objection state first (they feed the features)
         self._update_facts(u, answers)
         self._update_objection(u, answers)
+        if u.speaker == "prospect":
+            for name in ("buying_signal", "prospect_accepts", "commitment"):
+                a = answers.get(name)
+                if a and a.get("type") == "noul" and a["noul"] >= C.SIGNAL_ON_THRESHOLD:
+                    self.seen.add(name)
         features = self.extract_features(u, answers, self.facts, self.objection.open)
         inst, contributions = composite(features, stage, self.weights, self.stage_prior)
         self.probability = ema(self.probability, inst)
@@ -452,6 +458,42 @@ class CallSession:
             contributions=dict(prev.contributions), objection=copy.copy(self.objection), facts=dict(self.facts),
             jev={"backchannel": True}, talk=talk, coaching=dict(prev.coaching), sensitivity=[],
         )
+
+    def roteiro(self) -> dict[str, Any]:
+        """Progress through the call roadmap: which items are done, which step the rep is on, and what to ask next.
+
+        The current step is the first one with something missing, unless the conversation already moved further
+        (Jev's stage); then the rep is on that later step and the skipped gaps are listed so they can go back.
+        """
+        stages_seen = set(self.stage_history)
+        steps = []
+        for st in C.ROTEIRO:
+            items = []
+            for ck in st["checks"]:
+                if "fact" in ck:
+                    done = ck["fact"] in self.facts
+                elif "seen" in ck:
+                    done = ck["seen"] in self.seen
+                elif "stage_seen" in ck:
+                    done = bool(stages_seen & set(ck["stage_seen"]))
+                elif ck.get("objection_clear"):
+                    done = "pricing" in stages_seen and not self.objection.open
+                else:
+                    done = False
+                items.append({"label": ck["label"], "done": done, "ask": ck.get("ask", "")})
+            steps.append({"id": st["id"], "title": st["title"], "goal": st["goal"], "items": items, "done": all(i["done"] for i in items)})
+        first_open = next((i for i, s in enumerate(steps) if not s["done"]), len(steps) - 1)
+        stage_now = self.stage_history[-1] if self.stage_history else "opening"
+        at_stage = next((i for i, st in enumerate(C.ROTEIRO) if stage_now in st["stages"]), 0)
+        current = max(first_open, at_stage) if self.utterances else 0
+        gaps = [{"step": s["title"], "label": it["label"], "ask": it["ask"]} for s in steps[:current] for it in s["items"] if not it["done"]]
+        missing = [it for it in steps[current]["items"] if not it["done"]]
+        if missing:
+            next_ask = missing[0]["ask"]
+        else:
+            nxt = next((s for s in steps[current + 1:] if not s["done"]), None)
+            next_ask = next((it["ask"] for it in nxt["items"] if not it["done"]), "") if nxt else ""
+        return {"steps": steps, "current": current, "gaps": gaps, "next_ask": next_ask}
 
     def qualification(self, step: Step | None) -> dict[str, Any]:
         """Checklist of what the rep has established, plus a nudge for the first gap once it is time to ask."""
@@ -559,6 +601,7 @@ class CallSession:
                 "signals": signals,
                 "coaching": step.coaching,
                 "qualification": self.qualification(step),
+                "roteiro": self.roteiro(),
                 "backchannel": bool(step.jev.get("backchannel")),
                 # raw answers go back to the browser so it can rebuild the call after a reconnect (see restore)
                 "answers": None if step.jev.get("backchannel") else step.answers,

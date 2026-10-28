@@ -1,0 +1,64 @@
+{
+  "_comment": "Roteiro da call da Playbook Lab, na ordem em que o vendedor deve conduzir. Cada etapa tem um objetivo e itens que o copiloto marca sozinho a partir do que o Jev detecta. Tipos de item: fact (fato confirmado pelo Jev), seen (sinal do cliente que apareceu pelo menos uma vez), stage_seen (a call já passou por uma dessas etapas), objection_clear (preço já apareceu e não há objeção em aberto). `ask` é a pergunta sugerida enquanto o item falta.",
+  "steps": [
+    {
+      "id": "abertura",
+      "title": "Abertura",
+      "goal": "Entender por que o cliente marcou a conversa e o momento do negócio dele.",
+      "stages": ["opening"],
+      "checks": [
+        {"label": "Entendeu o momento do cliente", "stage_seen": ["discovery", "qualification", "pitch_demo", "pricing", "objection_handling", "closing", "next_steps"], "ask": "O que te fez marcar essa conversa agora, e não daqui a três meses?"}
+      ]
+    },
+    {
+      "id": "descoberta",
+      "title": "Descoberta",
+      "goal": "Achar a dor principal e colocar número nela.",
+      "stages": ["discovery"],
+      "checks": [
+        {"label": "Dor identificada", "fact": "pain_identified", "ask": "Qual parte do teu processo comercial mais te toma tempo hoje?"},
+        {"label": "Impacto em números", "fact": "pain_quantified", "ask": "Quantas horas por semana, ou quantos leads por mês, isso te custa hoje?"}
+      ]
+    },
+    {
+      "id": "qualificacao",
+      "title": "Qualificação",
+      "goal": "Saber quem decide, para quando e quanto ele investe hoje, antes de falar de preço.",
+      "stages": ["qualification"],
+      "checks": [
+        {"label": "Decisor", "fact": "decision_maker_identified", "ask": "Além de você, mais alguém participa dessa decisão, um sócio por exemplo?"},
+        {"label": "Prazo", "fact": "timeline_known", "ask": "Para quando você gostaria de ter isso rodando?"},
+        {"label": "Orçamento", "fact": "budget_discussed", "ask": "Hoje você já investe em alguma ferramenta ou pessoa para prospecção? Quanto mais ou menos?"}
+      ]
+    },
+    {
+      "id": "apresentacao",
+      "title": "Apresentação",
+      "goal": "Mostrar o Sales OS ligado à dor que ele contou, e confirmar que faz sentido para ele.",
+      "stages": ["pitch_demo"],
+      "checks": [
+        {"label": "Mostrou a solução", "stage_seen": ["pitch_demo"], "ask": "Posso te mostrar como o Sales OS resolveria exatamente isso que você contou?"},
+        {"label": "Cliente validou", "seen": "buying_signal", "ask": "Isso faz sentido para o teu momento?"}
+      ]
+    },
+    {
+      "id": "preco",
+      "title": "Preço e objeções",
+      "goal": "Apresentar o investimento ancorado no valor e tratar as dúvidas até não sobrar objeção.",
+      "stages": ["pricing", "objection_handling"],
+      "checks": [
+        {"label": "Preço apresentado", "stage_seen": ["pricing"], "ask": "Vou ser direto: o Sales OS é R$ 5.000, dá para parcelar em 2x, e se paga com as horas que você deixa de gastar operando."},
+        {"label": "Objeções tratadas", "objection_clear": true, "ask": "O que você precisaria ver para ficar tranquilo com esse investimento?"}
+      ]
+    },
+    {
+      "id": "proximo_passo",
+      "title": "Próximo passo",
+      "goal": "Sair da call com uma data marcada: proposta revisada juntos, reunião com o sócio ou início.",
+      "stages": ["closing", "next_steps"],
+      "checks": [
+        {"label": "Próximo passo com data", "fact": "next_step_agreed", "ask": "Posso te mandar a proposta hoje e a gente revisa junto na quinta, às 10h?"}
+      ]
+    }
+  ]
+}

@@ -53,6 +53,7 @@
   .transcript { max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
   .utt { display: grid; grid-template-columns: 44px 70px 1fr 54px; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--panel2); font-size: 13px; align-items: baseline; }
   .utt.latest { outline: 1px solid var(--accent); }
+  .utt.pending { opacity: .6; font-style: italic; }
   .utt .t { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
   .utt .who { font-weight: 600; }
   .utt.rep .who { color: var(--accent); } .utt.prospect .who { color: var(--accent2); }
@@ -74,6 +75,22 @@
   .coach .line.pending { color: var(--muted); font-style: italic; background: transparent; border: 1px dashed var(--border); }
   .coach .line.rejected { color: var(--muted); font-size: 11.5px; background: transparent; border: 1px dashed #ff5c5c55; text-decoration: line-through; }
   .coach .line.rejected::before { content: "descartada: "; color: var(--bad); font-weight: 700; text-decoration: none; display: inline-block; }
+  .rt-steps { display: flex; gap: 4px; margin-bottom: 12px; }
+  .rt-steps span { flex: 1; min-width: 0; text-align: center; font-size: 11.5px; padding: 6px 2px 0; border-top: 3px solid var(--panel2); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rt-steps span.done { border-top-color: var(--good); color: var(--text); }
+  .rt-steps span.now { border-top-color: var(--accent); color: var(--text); font-weight: 600; }
+  .rt-steps span.gap { border-top-color: var(--warn); }
+  .rt-now { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+  .rt-goal { color: var(--muted); font-size: 12.5px; margin-bottom: 10px; }
+  .rt-items { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .rt-items span { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+  .rt-items span.done { color: var(--text); border-color: #2ecc7166; background: #2ecc711a; }
+  .rt-items span.done::before { content: "✓ "; color: var(--good); font-weight: 700; }
+  .rt-items span:not(.done)::before { content: "○ "; }
+  .rt-ask { background: #6ea8fe1a; border: 1px solid #6ea8fe55; border-radius: 10px; padding: 9px 12px; font-size: 14px; }
+  .rt-ask small { display: block; color: var(--accent); font-size: 11.5px; font-weight: 600; margin-bottom: 2px; }
+  .rt-gaps { margin-top: 10px; font-size: 12.5px; color: var(--warn); }
+  .rt-gaps b { font-weight: 600; }
   .objection { display: none; border-left: 4px solid var(--bad); padding-left: 10px; }
   .objection.open { display: block; }
   .objection .type { font-size: 17px; font-weight: 700; text-transform: capitalize; }
@@ -305,6 +322,11 @@
   </div>
 
   <div class="stack">
+    <div class="card" id="roteiro-card">
+      <h3>Roteiro da call <span class="right muted" id="rt-progress"></span></h3>
+      <div id="roteiro"></div>
+    </div>
+
     <div class="card">
       <h3>Etapa da call <span class="right muted" id="stage-conf"></span></h3>
       <div class="stage" id="stages"></div>
@@ -403,7 +425,7 @@
       const vsel = $('video-select'); vsel.innerHTML = '';
       m.calls.filter(c => c.video && (c.video.youtube_id || c.video.file || c.video.url)).forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.title} (${Math.round(c.duration_s / 60)} min)`; vsel.appendChild(o); });
       if (!vsel.options.length) { const o = document.createElement('option'); o.textContent = 'nenhuma call com vídeo em data/calls'; o.disabled = true; vsel.appendChild(o); }
-      renderStages(null); renderWeights(m.weights); renderSignalsSkeleton(m.weights);
+      renderStages(null); renderWeights(m.weights); renderSignalsSkeleton(m.weights); renderRoteiro(null);
       if (!m.has_api_key) toast('O servidor está sem chave de API: defina OPENROUTER_API_KEY (ou TYPESAFE_API_KEY) e reinicie ou republique.');
     } else if (m.type === 'phrasing_pending') {
       state.pendingMove = m.move_id; renderCoach(state.coaching);
@@ -418,7 +440,7 @@
     } else if (m.type === 'restored') {
       state.timeline = m.timeline.map((s, i) => ({ ...s, text: state.history[i] ? state.history[i].text : '' }));
       redrawChart(); renderProb(m.probability, null); state.lastProb = m.probability;
-      if (m.coaching) { state.coaching = m.coaching; renderStages(m.stage); renderCoach(m.coaching); renderObjection(m.objection); renderSignals(m.signals); renderTalk(m.talk); renderSens(m.sensitivity); }
+      if (m.coaching) { state.coaching = m.coaching; renderStages(m.stage); renderCoach(m.coaching); renderObjection(m.objection); renderSignals(m.signals); renderTalk(m.talk); renderSens(m.sensitivity); renderRoteiro(m.roteiro); }
       if (state.replay && !state.pausedFlag) send({ type: 'start_replay', call: state.replay.call, speed: +$('speed').value, from: state.replay.next, keep: true });
     } else if (m.type === 'reset') {
       clearCall(m.call);
@@ -451,6 +473,7 @@
     $('hero-sub').textContent = callMeta ? callMeta.title : (state.mode === 'video' && video.call ? video.call.title : 'nova call');
     redrawChart(); renderStages(null); renderCoach(null); renderObjection(null); $('sens').innerHTML = '<div class="muted">—</div>';
     if (state.hello) renderSignalsSkeleton(state.hello.weights);
+    renderRoteiro(null);
     renderTalk({ ratio_rep: 0.5, rep_words: 0, prospect_words: 0, pace_wpm_rep: '—', pace_wpm_prospect: '—', rep_monologue: false });
     $('talk-ratio').textContent = '—';
   }
@@ -468,7 +491,7 @@
     state.coaching = m.coaching;
     if (state.tailored && (m.coaching.gated || m.coaching.move_id !== state.tailored.move_id)) state.tailored = null; // move changed: tailored line is stale
     renderStages(m.stage); renderCoach(m.coaching); renderObjection(m.objection);
-    renderSignals(m.signals); renderTalk(m.talk); renderSens(m.sensitivity);
+    renderSignals(m.signals); renderTalk(m.talk); renderSens(m.sensitivity); renderRoteiro(m.roteiro);
     const j = m.jev, jl = m.jev_last;
     $('pill-latency').innerHTML = `latência <b>${Math.round(jl.latency_ms)} ms</b> <span class="muted">(média ${Math.round(j.mean_ms)} · p95 ${Math.round(j.p95_ms)})</span>`;
     $('pill-cost').innerHTML = `custo <b>$${j.cum_cost_usd.toFixed(4)}</b> <span class="muted">${j.requests} req</span>`;
@@ -521,6 +544,26 @@
       tailored = `<div class="line pending">personalizando uma fala para este momento…</div>`;
     }
     el.innerHTML = `<div class="title">${escapeHtml(c.title)}</div><div class="what">${escapeHtml(c.what)}</div>${tailored}${lines.join('')}`;
+  }
+  // The call roadmap: where the rep is in the process, what is still missing, and the next question to ask.
+  function renderRoteiro(r) {
+    const defs = (state.hello && state.hello.roteiro) || [];
+    if (!r) {
+      $('rt-progress').textContent = '';
+      $('roteiro').innerHTML = defs.length
+        ? `<div class="rt-steps">${defs.map((d, i) => `<span class="${i === 0 ? 'now' : ''}">${escapeHtml(d.title)}</span>`).join('')}</div><div class="rt-now">${escapeHtml(defs[0].title)}</div><div class="rt-goal">${escapeHtml(defs[0].goal)}</div><div class="muted" style="font-size:12.5px">O roteiro avança sozinho conforme a conversa acontece.</div>`
+        : '';
+      return;
+    }
+    const cur = r.steps[r.current];
+    const doneCount = r.steps.filter(s => s.done).length;
+    $('rt-progress').textContent = `${doneCount} de ${r.steps.length} etapas`;
+    const gapSteps = new Set(r.gaps.map(g => g.step));
+    const bar = r.steps.map((s, i) => `<span class="${s.done ? 'done' : i === r.current ? 'now' : gapSteps.has(s.title) ? 'gap' : ''}" title="${escapeHtml(s.goal)}">${escapeHtml(s.title)}</span>`).join('');
+    const items = cur.items.map(it => `<span class="${it.done ? 'done' : ''}">${escapeHtml(it.label)}</span>`).join('');
+    const ask = r.next_ask ? `<div class="rt-ask"><small>Pergunte agora</small>${escapeHtml(r.next_ask)}</div>` : `<div class="rt-ask"><small>Tudo coberto</small>Feche o próximo passo com data marcada.</div>`;
+    const gaps = r.gaps.length ? `<div class="rt-gaps">Ficou para trás: <b>${r.gaps.map(g => escapeHtml(g.label)).join(', ')}</b>. Vale voltar antes de fechar.</div>` : '';
+    $('roteiro').innerHTML = `<div class="rt-steps">${bar}</div><div class="rt-now">${r.current + 1}. ${escapeHtml(cur.title)}</div><div class="rt-goal">${escapeHtml(cur.goal)}</div><div class="rt-items">${items}</div>${ask}${gaps}`;
   }
   function renderObjection(o) {
     const el = $('objection');
@@ -770,7 +813,7 @@
   }
 
   function segmenter(stream, speaker) {
-    const RATE = 16000, GATE = 0.012, END_SILENCE_MS = 900, MAX_MS = 15000, MIN_SPEECH_MS = 450;
+    const RATE = 16000, GATE = 0.012, END_SILENCE_MS = 600, MAX_MS = 10000, MIN_SPEECH_MS = 450;  // short pauses close a segment: text shows up sooner
     const ctx = new AudioContext({ sampleRate: RATE });
     const src = ctx.createMediaStreamSource(stream);
     const proc = ctx.createScriptProcessor(2048, 1, 1);
@@ -801,6 +844,13 @@
 
   async function transcribe(wav, speaker, t) {
     if (!state.aiOn) return;  // AI paused: the audio is not sent anywhere
+    // show the turn arriving while it is transcribed, so the rep sees the copilot heard it
+    const pending = document.createElement('div'); pending.className = `utt ${speaker} pending`;
+    pending.innerHTML = `<span class="t">…</span><span class="who">${WHO[speaker]}</span><span class="muted">transcrevendo…</span><span class="p"></span>`;
+    $('transcript').appendChild(pending); $('transcript').scrollTop = $('transcript').scrollHeight;
+    try { await transcribeNow(wav, speaker, t); } finally { pending.remove(); }
+  }
+  async function transcribeNow(wav, speaker, t) {
     try {
       const r = await (await fetch('/api/transcribe', { method: 'POST', body: wav })).json();
       if (r.error) { toast('Transcrição: ' + r.error); return; }

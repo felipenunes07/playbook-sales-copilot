@@ -399,6 +399,7 @@ async def websocket(ws: WebSocket) -> None:
             "personalize_skip_moves": sorted(C.PERSONALIZE_SKIP_MOVES),
             "calls": list_calls(),
             "playbook": C.PLAYBOOK,
+            "roteiro": [{"id": st["id"], "title": st["title"], "goal": st["goal"]} for st in C.ROTEIRO],
             "weights": conn.session.weights_table() if conn.session else [],
             "stage_prior": C.STAGE_PRIOR,
             "ema_alpha": C.EMA_ALPHA,

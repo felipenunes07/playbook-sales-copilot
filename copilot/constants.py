@@ -75,6 +75,11 @@ def load_playbook(path: Path = PLAYBOOK_PATH) -> list[dict[str, Any]]:
 
 
 PLAYBOOK: list[dict[str, Any]] = load_playbook()
+
+# The call roadmap shown to the rep (data/roteiro.json): ordered steps whose items are ticked from Jev's answers.
+ROTEIRO_PATH = Path(__file__).resolve().parent.parent / "data" / "roteiro.json"
+with open(ROTEIRO_PATH, encoding="utf-8") as _f:
+    ROTEIRO: list[dict[str, Any]] = json.load(_f)["steps"]
 PLAYBOOK_BY_ID: dict[str, dict[str, Any]] = {m["id"]: m for m in PLAYBOOK}
 
 # ---------------------------------------------------------------------------
@@ -213,6 +218,11 @@ QUESTIONS: dict[str, dict[str, Any]] = {
         true="Prospect mentions things like hours of manual work, leads or follow-ups falling through, no time to prospect, losing customers or deals, a process that does not scale, or paying for a tool that does not work.",
         false="Only the rep talks about problems in general, or the prospect says things are fine.",
     ),
+    "pain_quantified": _noul(
+        "In `recent_transcript`, has the prospect put a number on their problem or its cost: hours spent, money, leads, deals, customers, or jobs lost per week or month?",
+        true="'About ten hours a week', 'we lose maybe ten leads a month', 'it costs us around fifteen thousand a month', 'half my week goes into this'.",
+        false="The problem was described only in words, or only the rep mentioned numbers.",
+    ),
     "budget_discussed": _noul(
         "In `recent_transcript`, has money been discussed: the price or investment of the rep's offer, or the prospect's budget, what they pay today, or whether funds are available?",
         true="The rep states the price or investment of the offer, or the prospect states a budget, a range, what they currently pay, or that funds are or are not approved.",
@@ -336,6 +346,7 @@ SIGNAL_WEIGHTS: dict[str, dict[str, Any]] = {
     # positive, durable facts
     "next_step_agreed": {"kind": "fact", "weight": 0.09, "label": "Próximo passo combinado"},
     "pain_identified": {"kind": "fact", "weight": 0.05, "label": "Dor identificada"},
+    "pain_quantified": {"kind": "fact", "weight": 0.03, "label": "Impacto em números"},
     "budget_discussed": {"kind": "fact", "weight": 0.04, "label": "Preço/orçamento discutido"},
     "decision_maker_identified": {"kind": "fact", "weight": 0.04, "label": "Decisor identificado"},
     "timeline_known": {"kind": "fact", "weight": 0.04, "label": "Prazo conhecido"},
