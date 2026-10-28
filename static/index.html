@@ -170,6 +170,13 @@
     <button class="btn" id="btn-call-copy" disabled>Copiar link</button>
     <button class="btn" id="btn-call-mic" disabled>🎙 Microfone ligado</button>
     <button class="btn" id="btn-call-cam" disabled>📷 Câmera ligada</button>
+    <select id="call-bg" title="fundo da sua câmera">
+      <option value="none">Fundo: nenhum</option>
+      <option value="blur">Fundo: desfocado</option>
+      <option value="image">Fundo: imagem</option>
+      <option value="pick">Fundo: trocar imagem…</option>
+    </select>
+    <input type="file" id="call-bg-file" accept="image/*" hidden />
     <button class="btn danger" id="btn-call-end" disabled>Encerrar</button>
     <span class="muted" id="call-status">use fone de ouvido · seu microfone = vendedor · áudio do cliente = prospect</span>
   </div>
@@ -707,7 +714,8 @@
   async function makeOffer() {
     if (call.pc) call.pc.close();
     const pc = call.pc = new RTCPeerConnection({ iceServers: call.ice });
-    call.local.getTracks().forEach(t => pc.addTrack(t, call.local));
+    const out = new MediaStream([...call.local.getAudioTracks(), outgoingVideo()].filter(Boolean));  // camera or its background-processed copy
+    out.getTracks().forEach(t => pc.addTrack(t, out));
     pc.onicecandidate = (e) => sendSig({ type: 'ice', candidate: e.candidate });
     pc.ontrack = (e) => {
       if ($('call-remote').srcObject !== e.streams[0]) $('call-remote').srcObject = e.streams[0];  // also needed for Chrome to feed remote audio to WebAudio
@@ -731,6 +739,7 @@
     call.segs.forEach(s => s.stop()); call.segs = [];
     if (call.pc) call.pc.close(); call.pc = null;
     if (call.poll) clearTimeout(call.poll); call.poll = null;
+    stopBackground();
     if (call.local) call.local.getTracks().forEach(t => t.stop()); call.local = null;
     $('call-remote').srcObject = null; $('call-local').srcObject = null; $('call-wait').style.display = 'flex';
     $('call-wait').textContent = 'Envie o link ao cliente. A chamada começa quando ele entrar.';
@@ -750,6 +759,7 @@
       toast('Permita câmera e microfone no navegador'); return;
     }
     $('call-local').srcObject = call.local; $('call-card').classList.add('on');
+    if (bg.mode !== 'none') setBackground(bg.mode);
     resetCall();  // the call starts from zero, with nothing left from a replay or a recording
     const r = await (await fetch('/api/sala', { method: 'POST' })).json();
     call.room = r.room; call.ice = r.ice;
@@ -802,10 +812,135 @@
     const tracks = call.local.getTracks().filter(t => t.kind === kind);
     const on = !(tracks[0] && tracks[0].enabled);
     tracks.forEach(t => { t.enabled = on; });
+    if (kind === 'video' && bg.track) bg.track.enabled = on;
     setToggle(id, label, on, false);
   };
   $('btn-call-mic').addEventListener('click', toggleTrack('audio', 'btn-call-mic', '🎙 Microfone'));
   $('btn-call-cam').addEventListener('click', toggleTrack('video', 'btn-call-cam', '📷 Câmera'));
+
+  // ---------- camera background (blur or an image), done in the browser with MediaPipe's selfie segmenter ----------
+  // The camera frame is split into person / background on every frame; the composite is drawn on a canvas whose
+  // stream replaces the camera track sent to the prospect (and the local preview). Nothing leaves the browser.
+  const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
+  const bg = { mode: 'none', img: null, seg: null, loading: null, video: null, canvas: null, person: null, mask: null, maskData: null, track: null, running: false, lastTs: -1 };
+  const remember = (k, v) => { try { localStorage.setItem('copilot.bg.' + k, v); } catch (_) {} };
+  const recall = (k) => { try { return localStorage.getItem('copilot.bg.' + k); } catch (_) { return null; } };
+
+  function loadSegmenter() {
+    if (!bg.loading) bg.loading = (async () => {
+      const { FilesetResolver, ImageSegmenter } = await import(MP + '/vision_bundle.mjs');
+      const files = await FilesetResolver.forVisionTasks(MP + '/wasm');
+      const options = (delegate) => ({ baseOptions: { modelAssetPath: MP_MODEL, delegate }, runningMode: 'VIDEO', outputConfidenceMasks: true, outputCategoryMask: false });
+      try { bg.seg = await ImageSegmenter.createFromOptions(files, options('GPU')); }
+      catch (_) { bg.seg = await ImageSegmenter.createFromOptions(files, options('CPU')); }
+      return bg.seg;
+    })().catch((e) => { bg.loading = null; throw e; });
+    return bg.loading;
+  }
+
+  // the video track that goes to the prospect and to the local preview
+  const outgoingVideo = () => (bg.mode !== 'none' && bg.track ? bg.track : call.local && call.local.getVideoTracks()[0]);
+
+  function drawFrame(result) {
+    const m = result.confidenceMasks && result.confidenceMasks[0];
+    if (!m || !bg.canvas) return;
+    const conf = m.getAsFloat32Array();
+    if (bg.mask.width !== m.width || bg.mask.height !== m.height) {
+      bg.mask.width = m.width; bg.mask.height = m.height;
+      bg.maskData = bg.mask.getContext('2d').createImageData(m.width, m.height);
+    }
+    const d = bg.maskData.data;
+    for (let i = 0; i < conf.length; i++) d[i * 4 + 3] = conf[i] * 255;  // person confidence -> alpha
+    bg.mask.getContext('2d').putImageData(bg.maskData, 0, 0);
+    const { width: w, height: h } = bg.canvas;
+    const p = bg.person.getContext('2d');
+    p.globalCompositeOperation = 'copy'; p.drawImage(bg.video, 0, 0, w, h);
+    p.globalCompositeOperation = 'destination-in'; p.drawImage(bg.mask, 0, 0, w, h);
+    const c = bg.canvas.getContext('2d');
+    if (bg.mode === 'image' && bg.img) {
+      const s = Math.max(w / bg.img.width, h / bg.img.height), iw = bg.img.width * s, ih = bg.img.height * s;
+      c.drawImage(bg.img, (w - iw) / 2, (h - ih) / 2, iw, ih);
+    } else {
+      c.filter = 'blur(14px)'; c.drawImage(bg.video, 0, 0, w, h); c.filter = 'none';
+    }
+    c.drawImage(bg.person, 0, 0);
+  }
+
+  function startProcessing() {
+    const cam = call.local.getVideoTracks()[0];
+    const { width = 1280, height = 720 } = cam.getSettings();
+    bg.video = Object.assign(document.createElement('video'), { muted: true, playsInline: true });
+    bg.video.srcObject = new MediaStream([cam]); bg.video.play();
+    bg.canvas = Object.assign(document.createElement('canvas'), { width, height });
+    bg.person = Object.assign(document.createElement('canvas'), { width, height });
+    bg.mask = document.createElement('canvas');
+    bg.track = bg.canvas.captureStream(30).getVideoTracks()[0];
+    bg.track.enabled = cam.enabled;
+    bg.running = true;
+    const next = () => (bg.video.requestVideoFrameCallback ? bg.video.requestVideoFrameCallback(step) : requestAnimationFrame(step));
+    const step = () => {
+      if (!bg.running) return;
+      const ts = performance.now();
+      if (bg.video.readyState >= 2 && ts > bg.lastTs) { bg.lastTs = ts; bg.seg.segmentForVideo(bg.video, ts, drawFrame); }
+      next();
+    };
+    next();
+  }
+
+  function stopBackground() {
+    bg.running = false;
+    if (bg.track) bg.track.stop();
+    if (bg.video) bg.video.srcObject = null;
+    bg.track = null; bg.video = null; bg.canvas = null;
+  }
+
+  function applyVideoTrack() {
+    const t = outgoingVideo();
+    if (!t) return;
+    $('call-local').srcObject = new MediaStream([t]);
+    const sender = call.pc && call.pc.getSenders().find(s => s.track && s.track.kind === 'video');
+    if (sender) sender.replaceTrack(t);  // swaps the picture mid-call without renegotiating
+  }
+
+  async function setBackground(mode) {
+    bg.mode = mode; remember('mode', mode); $('call-bg').value = mode;
+    if (!call.local) return;  // remembered; applied when the camera starts
+    if (mode === 'none') { stopBackground(); applyVideoTrack(); return; }
+    try {
+      $('call-bg').disabled = true;
+      await loadSegmenter();
+    } catch (e) {
+      toast('Não consegui carregar o efeito de fundo neste navegador');
+      bg.mode = 'none'; $('call-bg').value = 'none'; return;
+    } finally { $('call-bg').disabled = false; }
+    if (!bg.running) startProcessing();
+    applyVideoTrack();
+  }
+
+  async function useImageFile(file) {
+    const img = await createImageBitmap(file);
+    bg.img = img;
+    // keep a small copy so the same background comes back next time
+    const c = Object.assign(document.createElement('canvas'), { width: Math.min(1280, img.width), height: Math.round(Math.min(1280, img.width) * img.height / img.width) });
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    remember('image', c.toDataURL('image/jpeg', 0.85));
+    await setBackground('image');
+  }
+
+  $('call-bg').addEventListener('change', () => {
+    const v = $('call-bg').value;
+    if (v === 'pick' || (v === 'image' && !bg.img)) { $('call-bg').value = bg.mode; $('call-bg-file').click(); return; }
+    setBackground(v);
+  });
+  $('call-bg-file').addEventListener('change', () => { const f = $('call-bg-file').files[0]; if (f) useImageFile(f); $('call-bg-file').value = ''; });
+  (async () => {  // restore the last choice
+    const saved = recall('image');
+    if (saved) { try { const r = await fetch(saved); bg.img = await createImageBitmap(await r.blob()); } catch (_) {} }
+    const mode = recall('mode');
+    if (mode === 'blur' || (mode === 'image' && bg.img)) { bg.mode = mode; $('call-bg').value = mode; }
+  })();
+
   window.addEventListener('beforeunload', () => { if (call.room) sendSig({ type: 'bye' }, true); });
 
   connect();
