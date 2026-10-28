@@ -63,6 +63,12 @@ def app_secret() -> bytes:
     password = os.environ.get("APP_PASSWORD", "").strip()
     if password:
         return hashlib.sha256(("copilot:" + password).encode()).digest()
+    # No secret configured (e.g. OPEN_ACCESS deployments): derive one from the API keys, which every instance shares,
+    # so a room created on one serverless instance is still valid on another. Only a random per-process secret
+    # when nothing is configured (a local run without keys).
+    shared = "".join(os.environ.get(k, "").strip() for k in ("OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "JEV_API_KEY", "JEVMODEL_API_KEY", "BEATAPI_API_KEY", "BLOB_READ_WRITE_TOKEN"))
+    if shared:
+        return hashlib.sha256(("copilot-rooms:" + shared).encode()).digest()
     return _LOCAL_SECRET
 
 

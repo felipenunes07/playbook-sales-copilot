@@ -100,3 +100,15 @@ def test_open_access_drops_the_login(monkeypatch):
         assert c.post("/api/sala", headers=PUBLIC).status_code == 200
         with c.websocket_connect("/ws", headers=PUBLIC) as ws:
             assert ws.receive_json()["type"] == "hello"
+
+
+def test_rooms_survive_another_instance(monkeypatch):
+    """Serverless: the guest may hit a different process. Same keys => same secret => the room is still valid."""
+    import copilot.videocall as V
+
+    for k in ("APP_SECRET", "APP_PASSWORD"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+    room = V.new_room()
+    monkeypatch.setattr(V, "_LOCAL_SECRET", b"another process")
+    assert V.room_valid(room)
